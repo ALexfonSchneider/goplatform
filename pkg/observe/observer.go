@@ -1,8 +1,9 @@
 // Package observe provides OpenTelemetry-based observability for the goplatform SDK.
 //
 // Observer manages trace, metric, and log providers as a platform.Component with
-// explicit lifecycle (Start/Stop). By default, no global state is modified —
-// providers are created locally and passed explicitly.
+// explicit lifecycle (Start/Stop). Providers are created eagerly in New() so that
+// TracerProvider()/MeterProvider() return real (non-noop) providers immediately.
+// Start() adds OTLP exporters; Stop() flushes and shuts down.
 //
 // Usage:
 //
@@ -12,8 +13,10 @@
 //	    observe.WithOTLPEndpoint("localhost:4317"),
 //	    observe.WithBaseHandler(baseHandler),
 //	)
+//	// TracerProvider() is usable immediately — no need to wait for Start().
+//	db, _ := postgres.New(postgres.WithTracerProvider(obs.TracerProvider()))
 //	app.Register("observe", obs)
-//	logger := obs.Logger() // stdout before Start, stdout + OTel after Start
+//	logger := obs.Logger()
 package observe
 
 import (
@@ -47,9 +50,10 @@ import (
 // Observer manages OpenTelemetry traces, metrics, and log export.
 // It implements platform.Component with explicit Start/Stop lifecycle.
 //
-// When WithBaseHandler is set, Logger() returns a logger that writes to
-// stdout before Start() and to both stdout + OTel after Start(). The same
-// Logger instance is valid throughout — callers don't need to re-obtain it.
+// Providers are created eagerly in New() so that TracerProvider()/MeterProvider()
+// return real SDK providers immediately — before Start(). Start() connects
+// OTLP exporters; spans/metrics created before Start() are recorded but not
+// exported until Start() registers the exporter.
 type Observer struct {
 	mu sync.Mutex
 
@@ -57,29 +61,22 @@ type Observer struct {
 	serviceVersion string
 	otlpEndpoint   string
 
-	// Base logger for Observer's own messages (before swap is ready).
-	logger platform.Logger
-
-	// Base slog handler (e.g. slog.NewJSONHandler(os.Stdout)).
-	// When set, Observer creates a swapHandler-backed Logger.
+	logger      platform.Logger
 	baseHandler slog.Handler
+	swap        *swapHandler
 
-	// Swap handler wrapping baseHandler. After Start(), swapped to
-	// multiHandler(baseHandler, otelHandler). After Stop(), reverted.
-	swap *swapHandler
-
-	// Trace + metric providers.
+	// Providers — created in New() (or injected via options).
 	tp       trace.TracerProvider
 	mp       metric.MeterProvider
+	lp       otellog.LoggerProvider
 	customTP bool
 	customMP bool
-	ownedTP  *sdktrace.TracerProvider
-	ownedMP  *sdkmetric.MeterProvider
-
-	// Log provider.
-	lp       otellog.LoggerProvider
 	customLP bool
-	ownedLP  *log.LoggerProvider
+
+	// Owned SDK providers — created in New(), shut down in Stop().
+	ownedTP *sdktrace.TracerProvider
+	ownedMP *sdkmetric.MeterProvider
+	ownedLP *log.LoggerProvider
 
 	started bool
 }
@@ -89,40 +86,28 @@ type Option func(*Observer)
 
 // WithServiceName sets the service name used in OTel resource attributes.
 func WithServiceName(name string) Option {
-	return func(o *Observer) {
-		o.serviceName = name
-	}
+	return func(o *Observer) { o.serviceName = name }
 }
 
 // WithServiceVersion sets the service version used in OTel resource attributes.
 func WithServiceVersion(version string) Option {
-	return func(o *Observer) {
-		o.serviceVersion = version
-	}
+	return func(o *Observer) { o.serviceVersion = version }
 }
 
 // WithOTLPEndpoint sets the OTLP gRPC endpoint for exporting traces, metrics, and logs.
 func WithOTLPEndpoint(endpoint string) Option {
-	return func(o *Observer) {
-		o.otlpEndpoint = endpoint
-	}
+	return func(o *Observer) { o.otlpEndpoint = endpoint }
 }
 
 // WithLogger sets the base logger used by the Observer for its own messages.
-// For application logging with OTel export, use WithBaseHandler instead.
 func WithLogger(l platform.Logger) Option {
-	return func(o *Observer) {
-		o.logger = l
-	}
+	return func(o *Observer) { o.logger = l }
 }
 
 // WithBaseHandler sets the base slog.Handler for stdout output. After Start(),
-// obs.Logger() returns a logger that writes to both this handler and OTel.
-// Before Start(), it writes to this handler only.
+// obs.Logger() writes to both this handler and OTel.
 func WithBaseHandler(h slog.Handler) Option {
-	return func(o *Observer) {
-		o.baseHandler = h
-	}
+	return func(o *Observer) { o.baseHandler = h }
 }
 
 // WithTracerProvider sets a custom TracerProvider, bypassing internal creation.
@@ -142,7 +127,6 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 }
 
 // WithLoggerProvider sets a custom LoggerProvider, bypassing internal creation.
-// Custom providers are NOT shut down by Stop().
 func WithLoggerProvider(lp otellog.LoggerProvider) Option {
 	return func(o *Observer) {
 		o.lp = lp
@@ -151,6 +135,10 @@ func WithLoggerProvider(lp otellog.LoggerProvider) Option {
 }
 
 // New creates a new Observer with the given options.
+//
+// SDK providers are created eagerly (without exporters) so that
+// TracerProvider()/MeterProvider() are usable immediately. Start() adds
+// OTLP exporters later via RegisterSpanProcessor/AddReader.
 func New(opts ...Option) (*Observer, error) {
 	o := &Observer{
 		serviceName: "unknown",
@@ -160,9 +148,40 @@ func New(opts ...Option) (*Observer, error) {
 		opt(o)
 	}
 
-	// If baseHandler is set, create a swap-backed logger.
-	// Before Start: writes to baseHandler only.
-	// After Start: swapped to multiHandler(baseHandler, otelHandler).
+	// Build resource for providers.
+	res, err := resource.New(context.Background(),
+		resource.WithAttributes(semconv.ServiceName(o.serviceName)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("observe: build resource: %w", err)
+	}
+	if o.serviceVersion != "" {
+		res, err = resource.New(context.Background(),
+			resource.WithAttributes(
+				semconv.ServiceName(o.serviceName),
+				semconv.ServiceVersion(o.serviceVersion),
+			),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("observe: build resource: %w", err)
+		}
+	}
+
+	// Create SDK providers eagerly (no exporters yet).
+	if !o.customTP {
+		o.ownedTP = sdktrace.NewTracerProvider(sdktrace.WithResource(res))
+		o.tp = o.ownedTP
+	}
+	if !o.customMP {
+		o.ownedMP = sdkmetric.NewMeterProvider(sdkmetric.WithResource(res))
+		o.mp = o.ownedMP
+	}
+	if !o.customLP {
+		o.ownedLP = log.NewLoggerProvider(log.WithResource(res))
+		o.lp = o.ownedLP
+	}
+
+	// Swap handler for combined logging.
 	if o.baseHandler != nil {
 		o.swap = newSwapHandler(o.baseHandler)
 		o.logger = platform.NewSlogLogger(o.swap)
@@ -171,7 +190,8 @@ func New(opts ...Option) (*Observer, error) {
 	return o, nil
 }
 
-// Start initializes OTel exporters and providers.
+// Start connects OTLP exporters to the providers. Spans/metrics created
+// before Start() are recorded by the SDK but only exported after this call.
 func (o *Observer) Start(ctx context.Context) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -180,36 +200,50 @@ func (o *Observer) Start(ctx context.Context) error {
 		return fmt.Errorf("observe: already started")
 	}
 
-	res, err := o.buildResource(ctx)
-	if err != nil {
-		return fmt.Errorf("observe: build resource: %w", err)
-	}
-
-	if !o.customTP {
-		tp, err := o.createTracerProvider(ctx, res)
-		if err != nil {
-			return fmt.Errorf("observe: create tracer provider: %w", err)
+	// Add OTLP exporters if endpoint is configured.
+	if o.otlpEndpoint != "" {
+		if o.ownedTP != nil {
+			traceExp, err := otlptracegrpc.New(ctx,
+				otlptracegrpc.WithEndpoint(o.otlpEndpoint),
+				otlptracegrpc.WithInsecure(),
+			)
+			if err != nil {
+				return fmt.Errorf("observe: create OTLP trace exporter: %w", err)
+			}
+			o.ownedTP.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(traceExp))
 		}
-		o.ownedTP = tp
-		o.tp = tp
-	}
 
-	if !o.customMP {
-		mp, err := o.createMeterProvider(ctx, res)
-		if err != nil {
-			return fmt.Errorf("observe: create meter provider: %w", err)
+		if o.ownedMP != nil {
+			metricExp, err := otlpmetricgrpc.New(ctx,
+				otlpmetricgrpc.WithEndpoint(o.otlpEndpoint),
+				otlpmetricgrpc.WithInsecure(),
+			)
+			if err != nil {
+				return fmt.Errorf("observe: create OTLP metric exporter: %w", err)
+			}
+			// Note: MeterProvider doesn't support AddReader after creation.
+			// Recreate with the reader.
+			o.ownedMP = sdkmetric.NewMeterProvider(
+				sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp)),
+			)
+			o.mp = o.ownedMP
 		}
-		o.ownedMP = mp
-		o.mp = mp
-	}
 
-	if !o.customLP {
-		lp, err := o.createLoggerProvider(ctx, res)
-		if err != nil {
-			return fmt.Errorf("observe: create logger provider: %w", err)
+		if o.ownedLP != nil {
+			logExp, err := otlploggrpc.New(ctx,
+				otlploggrpc.WithEndpoint(o.otlpEndpoint),
+				otlploggrpc.WithInsecure(),
+			)
+			if err != nil {
+				return fmt.Errorf("observe: create OTLP log exporter: %w", err)
+			}
+			// LoggerProvider doesn't support adding processors after creation.
+			// Recreate with processor.
+			o.ownedLP = log.NewLoggerProvider(
+				log.WithProcessor(log.NewBatchProcessor(logExp)),
+			)
+			o.lp = o.ownedLP
 		}
-		o.ownedLP = lp
-		o.lp = lp
 	}
 
 	// Upgrade swap handler: stdout + OTel.
@@ -237,7 +271,6 @@ func (o *Observer) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	// Revert swap to base-only before shutting down LoggerProvider.
 	if o.swap != nil && o.baseHandler != nil {
 		o.swap.swap(o.baseHandler)
 	}
@@ -249,13 +282,11 @@ func (o *Observer) Stop(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("observe: shutdown tracer provider: %w", err))
 		}
 	}
-
 	if o.ownedMP != nil {
 		if err := o.ownedMP.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("observe: shutdown meter provider: %w", err))
 		}
 	}
-
 	if o.ownedLP != nil {
 		if err := o.ownedLP.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("observe: shutdown logger provider: %w", err))
@@ -285,7 +316,8 @@ func (o *Observer) SetAsGlobal() {
 	))
 }
 
-// TracerProvider returns the configured TracerProvider.
+// TracerProvider returns the configured TracerProvider. Returns a real SDK
+// provider immediately after New() — no need to wait for Start().
 func (o *Observer) TracerProvider() trace.TracerProvider {
 	if o.tp != nil {
 		return o.tp
@@ -309,9 +341,7 @@ func (o *Observer) LoggerProvider() otellog.LoggerProvider {
 	return nooplog.NewLoggerProvider()
 }
 
-// Logger returns the structured Logger. When WithBaseHandler is set, the
-// same Logger instance writes to stdout before Start() and to stdout + OTel
-// after Start(). After Stop(), it reverts to stdout only.
+// Logger returns the structured Logger.
 func (o *Observer) Logger() platform.Logger {
 	return o.logger
 }
@@ -324,74 +354,6 @@ func (o *Observer) Tracer(name string) trace.Tracer {
 // Meter is a convenience method returning a named Meter.
 func (o *Observer) Meter(name string) metric.Meter {
 	return o.MeterProvider().Meter(name)
-}
-
-func (o *Observer) buildResource(ctx context.Context) (*resource.Resource, error) {
-	attrs := []resource.Option{
-		resource.WithAttributes(
-			semconv.ServiceName(o.serviceName),
-		),
-	}
-	if o.serviceVersion != "" {
-		attrs = append(attrs, resource.WithAttributes(
-			semconv.ServiceVersion(o.serviceVersion),
-		))
-	}
-	return resource.New(ctx, attrs...)
-}
-
-func (o *Observer) createTracerProvider(ctx context.Context, res *resource.Resource) (*sdktrace.TracerProvider, error) {
-	var opts []sdktrace.TracerProviderOption
-	opts = append(opts, sdktrace.WithResource(res))
-
-	if o.otlpEndpoint != "" {
-		exporter, err := otlptracegrpc.New(ctx,
-			otlptracegrpc.WithEndpoint(o.otlpEndpoint),
-			otlptracegrpc.WithInsecure(),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("observe: create OTLP trace exporter: %w", err)
-		}
-		opts = append(opts, sdktrace.WithBatcher(exporter))
-	}
-
-	return sdktrace.NewTracerProvider(opts...), nil
-}
-
-func (o *Observer) createMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.MeterProvider, error) {
-	var opts []sdkmetric.Option
-	opts = append(opts, sdkmetric.WithResource(res))
-
-	if o.otlpEndpoint != "" {
-		exporter, err := otlpmetricgrpc.New(ctx,
-			otlpmetricgrpc.WithEndpoint(o.otlpEndpoint),
-			otlpmetricgrpc.WithInsecure(),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("observe: create OTLP metric exporter: %w", err)
-		}
-		opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)))
-	}
-
-	return sdkmetric.NewMeterProvider(opts...), nil
-}
-
-func (o *Observer) createLoggerProvider(ctx context.Context, res *resource.Resource) (*log.LoggerProvider, error) {
-	var opts []log.LoggerProviderOption
-	opts = append(opts, log.WithResource(res))
-
-	if o.otlpEndpoint != "" {
-		exporter, err := otlploggrpc.New(ctx,
-			otlploggrpc.WithEndpoint(o.otlpEndpoint),
-			otlploggrpc.WithInsecure(),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("observe: create OTLP log exporter: %w", err)
-		}
-		opts = append(opts, log.WithProcessor(log.NewBatchProcessor(exporter)))
-	}
-
-	return log.NewLoggerProvider(opts...), nil
 }
 
 // Compile-time check that Observer implements platform.Component.

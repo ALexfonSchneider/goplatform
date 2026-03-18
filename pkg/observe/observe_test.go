@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestObserver_TwoInstances(t *testing.T) {
@@ -134,6 +135,62 @@ func TestConnectInterceptor(t *testing.T) {
 	assert.Equal(t, "", spans[0].Name)
 
 	require.NoError(t, tp.Shutdown(context.Background()))
+}
+
+func TestObserver_TracerProviderBeforeStart(t *testing.T) {
+	obs, err := New(WithServiceName("eager-svc"))
+	require.NoError(t, err)
+
+	// TracerProvider should return a real SDK provider BEFORE Start().
+	tp := obs.TracerProvider()
+	require.NotNil(t, tp)
+
+	// Create a span before Start() — should not panic, should be recorded.
+	ctx, span := tp.Tracer("test").Start(context.Background(), "before-start-span")
+	span.End()
+
+	// The span is recorded by the SDK provider (not noop).
+	// Verify by checking that the context carries a valid span.
+	recordedSpan := trace.SpanFromContext(ctx)
+	assert.True(t, recordedSpan.SpanContext().IsValid(), "span created before Start() should be valid")
+	assert.True(t, recordedSpan.SpanContext().HasTraceID(), "span should have a trace ID")
+}
+
+func TestObserver_SpanExportedAfterStart(t *testing.T) {
+	// Create Observer without OTLP (no real endpoint).
+	// Inject a sync exporter to capture spans.
+	exp := tracetest.NewInMemoryExporter()
+
+	obs, err := New(WithServiceName("export-svc"))
+	require.NoError(t, err)
+
+	// Register the sync exporter on the owned TP.
+	// This simulates what Start() does with OTLP, but synchronously.
+	obs.ownedTP.RegisterSpanProcessor(sdktrace.NewSimpleSpanProcessor(exp))
+
+	// Create a span — it should be exported via the registered processor.
+	_, span := obs.TracerProvider().Tracer("test").Start(context.Background(), "exported-span")
+	span.End()
+
+	spans := exp.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "exported-span", spans[0].Name)
+
+	require.NoError(t, obs.Stop(context.Background()))
+}
+
+func TestObserver_MeterProviderBeforeStart(t *testing.T) {
+	obs, err := New(WithServiceName("meter-svc"))
+	require.NoError(t, err)
+
+	// MeterProvider should return a real SDK provider BEFORE Start().
+	mp := obs.MeterProvider()
+	require.NotNil(t, mp)
+
+	// Create a counter before Start() — should not panic.
+	counter, err := mp.Meter("test").Int64Counter("test_counter")
+	require.NoError(t, err)
+	counter.Add(context.Background(), 1) // no panic
 }
 
 func TestObserver_StartStop(t *testing.T) {

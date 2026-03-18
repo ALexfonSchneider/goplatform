@@ -2,6 +2,7 @@ package platform
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 
 func TestNopLogger(t *testing.T) {
 	l := NopLogger()
+	ctx := context.Background()
 
 	// None of these should panic.
 	l.Debug("debug msg", "k", "v")
@@ -18,10 +20,14 @@ func TestNopLogger(t *testing.T) {
 	l.Warn("warn msg", "k", "v")
 	l.Error("error msg", "k", "v")
 
+	// Context variants should not panic either.
+	l.DebugContext(ctx, "debug ctx", "k", "v")
+	l.InfoContext(ctx, "info ctx", "k", "v")
+	l.WarnContext(ctx, "warn ctx", "k", "v")
+	l.ErrorContext(ctx, "error ctx", "k", "v")
+
 	child := l.With("parent", "value")
 	require.NotNil(t, child)
-
-	// Ensure With returns a Logger (same nopLogger).
 	child.Info("child msg")
 }
 
@@ -58,4 +64,18 @@ func TestSlogLoggerWith(t *testing.T) {
 	assert.Contains(t, output, "connected")
 	assert.Contains(t, output, "host")
 	assert.Contains(t, output, "localhost")
+}
+
+func TestSlogLoggerContext(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	l := NewSlogLogger(handler)
+
+	ctx := context.Background()
+	l.InfoContext(ctx, "with context", "action", "test")
+
+	output := buf.String()
+	assert.Contains(t, output, "with context")
+	assert.Contains(t, output, "action")
+	assert.Contains(t, output, "test")
 }
