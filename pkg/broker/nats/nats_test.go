@@ -39,8 +39,8 @@ func TestPublisher_Options(t *testing.T) {
 	})
 
 	t.Run("with publish hooks", func(t *testing.T) {
-		hook := func(_ context.Context, _ string, _ string, payload []byte) ([]byte, error) {
-			return payload, nil
+		hook := func(_ context.Context, msg *broker.Message) error {
+			return nil
 		}
 		p, err := NewPublisher(WithPublishHook(hook))
 		require.NoError(t, err)
@@ -317,7 +317,7 @@ func TestPublisher_PublishBeforeStart(t *testing.T) {
 	p, err := NewPublisher()
 	require.NoError(t, err)
 
-	err = p.Publish(context.Background(), "topic", "key", []byte("value"))
+	err = p.Publish(context.Background(), broker.Message{Topic: "topic", Key: []byte("key"), Value: []byte("value")})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not started")
 }

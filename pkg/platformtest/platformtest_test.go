@@ -94,7 +94,7 @@ func TestNewTestBroker(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("hello")
-	err = b.Publish(context.Background(), topic, "key1", payload)
+	err = b.Publish(context.Background(), broker.Message{Topic: topic, Key: []byte("key1"), Value: payload})
 	require.NoError(t, err)
 
 	select {

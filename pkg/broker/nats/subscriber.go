@@ -371,7 +371,7 @@ func (s *Subscriber) processMessage(natsMsg *natsgo.Msg, topic string, handler b
 		// Route to DLQ if configured.
 		if s.dlqPublisher != nil {
 			dlqTopic := topic + s.dlqTopicSuffix
-			dlqErr := s.dlqPublisher.Publish(ctx, dlqTopic, string(msg.Key), natsMsg.Data)
+			dlqErr := s.dlqPublisher.Publish(ctx, broker.Message{Topic: dlqTopic, Key: msg.Key, Value: natsMsg.Data})
 			if dlqErr != nil {
 				// DLQ publish failed — Nak the message (JetStream) or log (core).
 				span.RecordError(dlqErr)

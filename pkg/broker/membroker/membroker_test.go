@@ -23,7 +23,7 @@ func TestMemBroker_PublishSubscribe(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = b.Publish(ctx, "orders", "order-1", []byte("payload-data"))
+	err = b.Publish(ctx, broker.Message{Topic: "orders", Key: []byte("order-1"), Value: []byte("payload-data")})
 	require.NoError(t, err)
 
 	assert.Equal(t, []byte("order-1"), received.Key)
@@ -36,8 +36,9 @@ func TestMemBroker_PublishHook(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a hook that uppercases the payload.
-	b.WithPublishHook(func(_ context.Context, _ string, _ string, payload []byte) ([]byte, error) {
-		return bytes.ToUpper(payload), nil
+	b.WithPublishHook(func(_ context.Context, msg *broker.Message) error {
+		msg.Value = bytes.ToUpper(msg.Value)
+		return nil
 	})
 
 	var received broker.Message
@@ -48,7 +49,7 @@ func TestMemBroker_PublishHook(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = b.Publish(ctx, "events", "evt-1", []byte("hello world"))
+	err = b.Publish(ctx, broker.Message{Topic: "events", Key: []byte("evt-1"), Value: []byte("hello world")})
 	require.NoError(t, err)
 
 	assert.Equal(t, []byte("HELLO WORLD"), received.Value)
@@ -86,7 +87,7 @@ func TestMemBroker_Middleware(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = b.Publish(ctx, "topic", "k", []byte("v"))
+	err = b.Publish(ctx, broker.Message{Topic: "topic", Key: []byte("k"), Value: []byte("v")})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
@@ -116,7 +117,7 @@ func TestMemBroker_MultipleSubscribers(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = b.Publish(ctx, "notifications", "n-1", []byte("alert"))
+	err = b.Publish(ctx, broker.Message{Topic: "notifications", Key: []byte("n-1"), Value: []byte("alert")})
 	require.NoError(t, err)
 
 	assert.Equal(t, []byte("alert"), received1.Value)
@@ -129,6 +130,6 @@ func TestMemBroker_NoSubscribers(t *testing.T) {
 	b := New()
 	ctx := context.Background()
 
-	err := b.Publish(ctx, "empty-topic", "k", []byte("data"))
+	err := b.Publish(ctx, broker.Message{Topic: "empty-topic", Key: []byte("k"), Value: []byte("data")})
 	assert.NoError(t, err)
 }

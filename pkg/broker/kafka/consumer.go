@@ -413,7 +413,7 @@ func (c *Consumer) processMessage(
 		// Route to DLQ if configured.
 		if c.dlqPublisher != nil {
 			dlqTopic := topic + c.dlqTopicSuffix
-			dlqErr := c.dlqPublisher.Publish(msgCtx, dlqTopic, string(fetchMsg.Key), fetchMsg.Value)
+			dlqErr := c.dlqPublisher.Publish(msgCtx, broker.Message{Topic: dlqTopic, Key: fetchMsg.Key, Value: fetchMsg.Value})
 			if dlqErr != nil {
 				// DLQ publish failed — do NOT commit offset to prevent data loss.
 				span.RecordError(dlqErr)

@@ -56,7 +56,7 @@ func TestNATS_PublishSubscribe(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Publish a message.
-	err = p.Publish(ctx, topic, "key-1", []byte("hello nats"))
+	err = p.Publish(ctx, broker.Message{Topic: topic, Key: []byte("key-1"), Value: []byte("hello nats")})
 	require.NoError(t, err)
 
 	// Wait for the message to be received.
@@ -115,7 +115,7 @@ func TestNATS_JetStreamPublishSubscribe(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Publish a message.
-	err = p.Publish(ctx, topic, "js-key-1", []byte("hello jetstream"))
+	err = p.Publish(ctx, broker.Message{Topic: topic, Key: []byte("js-key-1"), Value: []byte("hello jetstream")})
 	require.NoError(t, err)
 
 	// Wait for the message to be received.
@@ -188,7 +188,7 @@ func TestNATS_QueueGroup(t *testing.T) {
 
 	// Publish messages.
 	for i := range numMessages {
-		err = p.Publish(ctx, topic, fmt.Sprintf("key-%d", i), []byte(fmt.Sprintf("msg-%d", i)))
+		err = p.Publish(ctx, broker.Message{Topic: topic, Key: []byte(fmt.Sprintf("key-%d", i)), Value: []byte(fmt.Sprintf("msg-%d", i))})
 		require.NoError(t, err)
 	}
 
@@ -264,7 +264,7 @@ func TestNATS_DLQ(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Publish a message that will fail processing.
-	err = p.Publish(ctx, topic, "fail-key", []byte("fail-payload"))
+	err = p.Publish(ctx, broker.Message{Topic: topic, Key: []byte("fail-key"), Value: []byte("fail-payload")})
 	require.NoError(t, err)
 
 	// Wait for the message to appear on the DLQ.
@@ -333,7 +333,7 @@ func TestNATS_TraceContext(t *testing.T) {
 	// Publish with an active span.
 	publishCtx, span := tracer.Start(ctx, "publish-test")
 	originalTraceID := span.SpanContext().TraceID()
-	err = p.Publish(publishCtx, topic, "trace-key", []byte("trace-payload"))
+	err = p.Publish(publishCtx, broker.Message{Topic: topic, Key: []byte("trace-key"), Value: []byte("trace-payload")})
 	span.End()
 	require.NoError(t, err)
 

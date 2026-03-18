@@ -59,7 +59,7 @@ func TestKafka_PublishSubscribe(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Publish a message.
-	err = p.Publish(ctx, topic, "key-1", []byte("hello kafka"))
+	err = p.Publish(ctx, broker.Message{Topic: topic, Key: []byte("key-1"), Value: []byte("hello kafka")})
 	require.NoError(t, err)
 
 	// Wait for the message to be received.
@@ -117,7 +117,7 @@ func TestKafka_StopGraceful(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Publish a message.
-	err = p.Publish(ctx, topic, "key", []byte("slow-message"))
+	err = p.Publish(ctx, broker.Message{Topic: topic, Key: []byte("key"), Value: []byte("slow-message")})
 	require.NoError(t, err)
 
 	// Wait for handler to start processing.
@@ -189,7 +189,7 @@ func TestKafka_DLQ(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Publish a message that will fail processing.
-	err = p.Publish(ctx, topic, "fail-key", []byte("fail-payload"))
+	err = p.Publish(ctx, broker.Message{Topic: topic, Key: []byte("fail-key"), Value: []byte("fail-payload")})
 	require.NoError(t, err)
 
 	// Wait for the message to appear on the DLQ.
@@ -259,7 +259,7 @@ func TestKafka_TraceContext(t *testing.T) {
 	// Publish with an active span.
 	publishCtx, span := tracer.Start(ctx, "publish-test")
 	originalTraceID := span.SpanContext().TraceID()
-	err = p.Publish(publishCtx, topic, "trace-key", []byte("trace-payload"))
+	err = p.Publish(publishCtx, broker.Message{Topic: topic, Key: []byte("trace-key"), Value: []byte("trace-payload")})
 	span.End()
 	require.NoError(t, err)
 

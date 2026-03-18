@@ -141,17 +141,17 @@ func (p *Producer) Stop(_ context.Context) error {
 	return nil
 }
 
-// Publish sends a message to the given topic. Before sending, the payload is
+// Publish sends a message to the given topic. Before sending, the message is
 // passed through all registered PublishHooks in order. W3C trace context is
 // injected into the message headers so that consumers can link their spans to
 // the producer's trace. Publish implements broker.Publisher.
-func (p *Producer) Publish(ctx context.Context, topic string, key string, payload []byte) error {
+func (p *Producer) Publish(ctx context.Context, msg broker.Message) error {
 	ctx, span := p.tracer.Start(ctx, "kafka.publish",
 		trace.WithSpanKind(trace.SpanKindProducer),
 		trace.WithAttributes(
 			attribute.String("messaging.system", "kafka"),
-			attribute.String("messaging.destination.name", topic),
-			attribute.String("messaging.kafka.message.key", key),
+			attribute.String("messaging.destination.name", msg.Topic),
+			attribute.String("messaging.kafka.message.key", string(msg.Key)),
 		),
 	)
 	defer span.End()
@@ -166,13 +166,8 @@ func (p *Producer) Publish(ctx context.Context, topic string, key string, payloa
 	}
 
 	// Run publish hooks pipeline.
-	transformed := make([]byte, len(payload))
-	copy(transformed, payload)
-
 	for _, hook := range p.hooks {
-		var err error
-		transformed, err = hook(ctx, topic, key, transformed)
-		if err != nil {
+		if err := hook(ctx, &msg); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "publish hook failed")
 			return fmt.Errorf("kafka: publish hook: %w", err)
@@ -182,20 +177,32 @@ func (p *Producer) Publish(ctx context.Context, topic string, key string, payloa
 	// Inject W3C trace context into message headers.
 	headers := InjectTraceContext(ctx, nil)
 
-	msg := kafkago.Message{
-		Topic:   topic,
-		Key:     []byte(key),
-		Value:   transformed,
+	kafkaMsg := kafkago.Message{
+		Topic:   msg.Topic,
+		Key:     msg.Key,
+		Value:   msg.Value,
 		Headers: headers,
 	}
 
-	if err := w.WriteMessages(ctx, msg); err != nil {
+	if err := w.WriteMessages(ctx, kafkaMsg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "write failed")
-		return fmt.Errorf("kafka: publish to %q: %w", topic, err)
+		return fmt.Errorf("kafka: publish to %q: %w", msg.Topic, err)
 	}
 
 	span.SetStatus(codes.Ok, "")
 
+	return nil
+}
+
+// PublishBatch sends multiple messages sequentially. Returns on the first
+// error; already-sent messages are not rolled back. PublishBatch implements
+// broker.Publisher.
+func (p *Producer) PublishBatch(ctx context.Context, msgs []broker.Message) error {
+	for _, msg := range msgs {
+		if err := p.Publish(ctx, msg); err != nil {
+			return err
+		}
+	}
 	return nil
 }

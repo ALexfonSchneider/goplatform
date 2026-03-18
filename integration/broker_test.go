@@ -65,7 +65,7 @@ func TestBroker_KafkaPublishConsume(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Publish a message.
-	err = producer.Publish(ctx, topic, "test-key", []byte("test-value"))
+	err = producer.Publish(ctx, broker.Message{Topic: topic, Key: []byte("test-key"), Value: []byte("test-value")})
 	require.NoError(t, err)
 
 	// Wait for the handler to receive the message.
@@ -149,7 +149,7 @@ func TestBroker_DLQ(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Publish a message that will fail processing and end up in the DLQ.
-	err = producer.Publish(ctx, topic, "dlq-key", []byte("dlq-payload"))
+	err = producer.Publish(ctx, broker.Message{Topic: topic, Key: []byte("dlq-key"), Value: []byte("dlq-payload")})
 	require.NoError(t, err)
 
 	// Wait for the message to appear on the DLQ.

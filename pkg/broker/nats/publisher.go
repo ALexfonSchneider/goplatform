@@ -173,7 +173,7 @@ func (p *Publisher) Stop(_ context.Context) error {
 	return nil
 }
 
-// Publish sends a message to the given topic. Before sending, the payload is
+// Publish sends a message to the given topic. Before sending, the message is
 // passed through all registered PublishHooks in order. W3C trace context is
 // injected into the NATS message headers so that subscribers can link their
 // spans to the publisher's trace. In JetStream mode, the message is published
@@ -181,13 +181,13 @@ func (p *Publisher) Stop(_ context.Context) error {
 // mode, the message is published fire-and-forget. The key is always stored in
 // the "key" header since NATS does not have a native per-message key concept.
 // Publish implements broker.Publisher.
-func (p *Publisher) Publish(ctx context.Context, topic string, key string, payload []byte) error {
+func (p *Publisher) Publish(ctx context.Context, bMsg broker.Message) error {
 	ctx, span := p.tracer.Start(ctx, "nats.publish",
 		trace.WithSpanKind(trace.SpanKindProducer),
 		trace.WithAttributes(
 			attribute.String("messaging.system", "nats"),
-			attribute.String("messaging.destination.name", topic),
-			attribute.String("messaging.nats.message.key", key),
+			attribute.String("messaging.destination.name", bMsg.Topic),
+			attribute.String("messaging.nats.message.key", string(bMsg.Key)),
 		),
 	)
 	defer span.End()
@@ -203,13 +203,8 @@ func (p *Publisher) Publish(ctx context.Context, topic string, key string, paylo
 	}
 
 	// Run publish hooks pipeline.
-	transformed := make([]byte, len(payload))
-	copy(transformed, payload)
-
 	for _, hook := range p.hooks {
-		var err error
-		transformed, err = hook(ctx, topic, key, transformed)
-		if err != nil {
+		if err := hook(ctx, &bMsg); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "publish hook failed")
 			return fmt.Errorf("nats: publish hook: %w", err)
@@ -220,32 +215,44 @@ func (p *Publisher) Publish(ctx context.Context, topic string, key string, paylo
 	header := InjectTraceContext(ctx, nil)
 
 	// Store the key in a header since NATS has no native message key.
-	header.Set("key", key)
+	header.Set("key", string(bMsg.Key))
 
 	msg := &natsgo.Msg{
-		Subject: topic,
-		Data:    transformed,
+		Subject: bMsg.Topic,
+		Data:    bMsg.Value,
 		Header:  header,
 	}
 
 	if js != nil {
 		// JetStream publish with ack and dedup via MsgId.
-		_, err := js.PublishMsg(msg, natsgo.MsgId(key))
+		_, err := js.PublishMsg(msg, natsgo.MsgId(string(bMsg.Key)))
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "jetstream publish failed")
-			return fmt.Errorf("nats: jetstream publish to %q: %w", topic, err)
+			return fmt.Errorf("nats: jetstream publish to %q: %w", bMsg.Topic, err)
 		}
 	} else {
 		// Core NATS publish (fire-and-forget).
 		if err := conn.PublishMsg(msg); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "publish failed")
-			return fmt.Errorf("nats: publish to %q: %w", topic, err)
+			return fmt.Errorf("nats: publish to %q: %w", bMsg.Topic, err)
 		}
 	}
 
 	span.SetStatus(codes.Ok, "")
 
+	return nil
+}
+
+// PublishBatch sends multiple messages sequentially. Returns on the first
+// error; already-sent messages are not rolled back. PublishBatch implements
+// broker.Publisher.
+func (p *Publisher) PublishBatch(ctx context.Context, msgs []broker.Message) error {
+	for _, msg := range msgs {
+		if err := p.Publish(ctx, msg); err != nil {
+			return err
+		}
+	}
 	return nil
 }
