@@ -9,6 +9,7 @@ import (
 	"{{.Module}}/internal/app"
 
 	"github.com/ALexfonSchneider/goplatform/pkg/platform"
+	"github.com/ALexfonSchneider/goplatform/pkg/observe"
 	"github.com/ALexfonSchneider/goplatform/pkg/server"
 	"github.com/ALexfonSchneider/goplatform/pkg/config"
 	{{- if .Postgres}}
@@ -75,11 +76,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Observability: traces + metrics.
+	obs, err := observe.New(
+		observe.WithServiceName(cfg.Observe.ServiceName),
+		observe.WithOTLPEndpoint(cfg.Observe.OTLPEndpoint),
+		observe.WithLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create observer", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("observe", obs)
+
 	{{- if .Postgres}}
 
 	// Secondary adapter: PostgreSQL.
 	db, err := postgres.New(
 		postgres.WithDSN(cfg.Postgres.DSN),
+		postgres.WithTracerProvider(obs.TracerProvider()),
 		postgres.WithLogger(logger),
 	)
 	if err != nil {
@@ -113,6 +127,7 @@ func main() {
 	// Kafka producer.
 	kafkaProducer, err := kafka.NewProducer(
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
+		kafka.WithProducerTracerProvider(obs.TracerProvider()),
 		kafka.WithProducerLogger(logger),
 	)
 	if err != nil {
@@ -125,6 +140,7 @@ func main() {
 	kafkaConsumer, err := kafka.NewConsumer(
 		kafka.WithConsumerBrokers(cfg.Kafka.Brokers...),
 		kafka.WithGroupID("{{.Name}}"),
+		kafka.WithConsumerTracerProvider(obs.TracerProvider()),
 		kafka.WithConsumerLogger(logger),
 	)
 	if err != nil {
@@ -146,6 +162,7 @@ func main() {
 	// NATS publisher.
 	natsPublisher, err := natsbr.NewPublisher(
 		natsbr.WithURL(cfg.NATS.URL),
+		natsbr.WithPublisherTracerProvider(obs.TracerProvider()),
 		natsbr.WithPublisherLogger(logger),
 	)
 	if err != nil {
@@ -158,6 +175,7 @@ func main() {
 	natsSubscriber, err := natsbr.NewSubscriber(
 		natsbr.WithSubscriberURL(cfg.NATS.URL),
 		natsbr.WithQueueGroup("{{.Name}}"),
+		natsbr.WithSubscriberTracerProvider(obs.TracerProvider()),
 		natsbr.WithSubscriberLogger(logger),
 	)
 	if err != nil {
@@ -180,6 +198,7 @@ func main() {
 	wfClient, err := workflow.NewClient(
 		workflow.WithHostPort(cfg.Temporal.HostPort),
 		workflow.WithNamespace(cfg.Temporal.Namespace),
+		workflow.WithTracerProvider(obs.TracerProvider()),
 		workflow.WithClientLogger(logger),
 	)
 	if err != nil {
@@ -208,6 +227,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// OTel middleware: traces + metrics for every HTTP request.
+	srv.Use(observe.HTTPMiddleware(obs.TracerProvider(), obs.MeterProvider()))
+
 	// Primary adapter: HTTP handler. Routes mounted at composition root.
 	h := handler.New(svc)
 	srv.Mount("/api/v1", h.Routes())
@@ -225,6 +247,10 @@ type Config struct {
 	Server struct {
 		Addr string `koanf:"addr"`
 	} `koanf:"server"`
+	Observe struct {
+		ServiceName  string `koanf:"service_name"`
+		OTLPEndpoint string `koanf:"otlp_endpoint"`
+	} `koanf:"observe"`
 	{{- if .Postgres}}
 	Postgres struct {
 		DSN string `koanf:"dsn"`

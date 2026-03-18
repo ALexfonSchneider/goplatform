@@ -1,2 +1,6 @@
 server:
   addr: ":8080"
+
+observe:
+  service_name: "{{.Name}}"
+  otlp_endpoint: "localhost:4317"
