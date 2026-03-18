@@ -1,11 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +27,7 @@ func migrateCmd() *cobra.Command {
 		Long:  "Run database migrations including up, down, and create operations.",
 	}
 
-	cmd.PersistentFlags().StringVar(&dsn, "dsn", "", "PostgreSQL DSN (default from env POSTGRES_DSN or config)")
+	cmd.PersistentFlags().StringVar(&dsn, "dsn", "", "PostgreSQL DSN (default from env POSTGRES_DSN)")
 	cmd.PersistentFlags().StringVar(&dir, "dir", "migrations", "migrations directory")
 
 	cmd.AddCommand(migrateUpCmd(&dsn, &dir))
@@ -32,19 +37,63 @@ func migrateCmd() *cobra.Command {
 	return cmd
 }
 
+// resolveDSN returns the DSN from the flag or POSTGRES_DSN env var.
+// The DSN scheme is converted from postgres:// to pgx5:// for golang-migrate.
+func resolveDSN(dsn string) (string, error) {
+	if dsn == "" {
+		dsn = os.Getenv("POSTGRES_DSN")
+	}
+	if dsn == "" {
+		return "", fmt.Errorf("DSN not set: use --dsn flag or POSTGRES_DSN env var")
+	}
+	// golang-migrate pgx driver requires pgx:// scheme.
+	if strings.HasPrefix(dsn, "postgres://") {
+		dsn = "pgx://" + strings.TrimPrefix(dsn, "postgres://")
+	} else if strings.HasPrefix(dsn, "postgresql://") {
+		dsn = "pgx://" + strings.TrimPrefix(dsn, "postgresql://")
+	}
+	return dsn, nil
+}
+
+// resolveSourceURL returns the file:// URL for the migrations directory.
+func resolveSourceURL(dir string) (string, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolving migrations path: %w", err)
+	}
+	return "file://" + absDir, nil
+}
+
 // migrateUpCmd creates the "migrate up" subcommand that runs all pending migrations.
 func migrateUpCmd(dsn, dir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "up",
 		Short: "Run all pending migrations",
-		Long:  "Run all pending database migrations.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d := *dsn
-			if d == "" {
-				d = os.Getenv("POSTGRES_DSN")
+			dbURL, err := resolveDSN(*dsn)
+			if err != nil {
+				return err
 			}
-			_ = d // DSN will be used when real migration logic is implemented.
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Running migrations from %s\n", *dir)
+			sourceURL, err := resolveSourceURL(*dir)
+			if err != nil {
+				return err
+			}
+
+			m, err := migrate.New(sourceURL, dbURL)
+			if err != nil {
+				return fmt.Errorf("migrate: init: %w", err)
+			}
+			defer func() { _, _ = m.Close() }()
+
+			if err := m.Up(); err != nil {
+				if errors.Is(err, migrate.ErrNoChange) {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No new migrations to apply.")
+					return nil
+				}
+				return fmt.Errorf("migrate: up: %w", err)
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Migrations applied successfully.")
 			return nil
 		},
 	}
@@ -52,20 +101,43 @@ func migrateUpCmd(dsn, dir *string) *cobra.Command {
 
 // migrateDownCmd creates the "migrate down" subcommand that rolls back the last migration.
 func migrateDownCmd(dsn, dir *string) *cobra.Command {
-	return &cobra.Command{
+	var steps int
+
+	cmd := &cobra.Command{
 		Use:   "down",
-		Short: "Rollback last migration",
-		Long:  "Rollback the last applied database migration.",
+		Short: "Rollback migrations",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d := *dsn
-			if d == "" {
-				d = os.Getenv("POSTGRES_DSN")
+			dbURL, err := resolveDSN(*dsn)
+			if err != nil {
+				return err
 			}
-			_ = d // DSN will be used when real migration logic is implemented.
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Rolling back last migration from %s\n", *dir)
+			sourceURL, err := resolveSourceURL(*dir)
+			if err != nil {
+				return err
+			}
+
+			m, err := migrate.New(sourceURL, dbURL)
+			if err != nil {
+				return fmt.Errorf("migrate: init: %w", err)
+			}
+			defer func() { _, _ = m.Close() }()
+
+			if err := m.Steps(-steps); err != nil {
+				if errors.Is(err, migrate.ErrNoChange) {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No migrations to rollback.")
+					return nil
+				}
+				return fmt.Errorf("migrate: down: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Rolled back %d migration(s).\n", steps)
 			return nil
 		},
 	}
+
+	cmd.Flags().IntVarP(&steps, "steps", "n", 1, "number of migrations to rollback")
+
+	return cmd
 }
 
 // migrateCreateCmd creates the "migrate create" subcommand that generates migration files.
