@@ -59,16 +59,16 @@ func main() {
 			"config/config.connect.yaml",
 			{{- end}}
 		),
-		config.WithEnvPrefix("{{.Name | upper}}"),
+		config.WithEnvPrefix("{{.Name | snake | upper}}"),
 	)
 	if err != nil {
-		logger.Error("failed to create config loader", "error", err)
+		slog.Error("failed to create config loader", "error", err)
 		os.Exit(1)
 	}
 
 	var cfg Config
 	if err := loader.Load(&cfg); err != nil {
-		logger.Error("failed to load config", "error", err)
+		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
 

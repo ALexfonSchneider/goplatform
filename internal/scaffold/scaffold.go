@@ -38,9 +38,11 @@ type Generator struct {
 func New() *Generator {
 	return &Generator{
 		funcs: template.FuncMap{
-			"upper":  strings.ToUpper,
-			"title":  titleCase,
-			"pascal": pascalCase,
+			"upper":       strings.ToUpper,
+			"title":       titleCase,
+			"pascal":      pascalCase,
+			"snake":       snakeCase,
+			"serviceName": serviceName,
 		},
 	}
 }
@@ -51,6 +53,26 @@ func titleCase(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// serviceName strips common suffixes (-service, _service, -svc, _svc) from
+// the name and returns PascalCase. Prevents "OrderServiceService" duplication.
+// "order-service" → "Order", "payment-svc" → "Payment", "order" → "Order".
+func serviceName(s string) string {
+	lower := strings.ToLower(s)
+	for _, suffix := range []string{"-service", "_service", "-svc", "_svc"} {
+		if strings.HasSuffix(lower, suffix) {
+			s = s[:len(s)-len(suffix)]
+			break
+		}
+	}
+	return pascalCase(s)
+}
+
+// snakeCase converts a kebab-case string to snake_case.
+// "delivery-service" → "delivery_service".
+func snakeCase(s string) string {
+	return strings.ReplaceAll(s, "-", "_")
 }
 
 // pascalCase converts a kebab-case or snake_case string to PascalCase.

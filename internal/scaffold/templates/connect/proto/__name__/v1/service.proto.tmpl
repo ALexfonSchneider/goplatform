@@ -1,18 +1,18 @@
 syntax = "proto3";
 
-package {{.Name}}.v1;
+package {{.Name | snake}}.v1;
 
 import "buf/validate/validate.proto";
 
-service {{.Name | pascal}}Service {
-  rpc Get{{.Name | pascal}}(Get{{.Name | pascal}}Request) returns (Get{{.Name | pascal}}Response);
+service {{.Name | serviceName}}Service {
+  rpc Get{{.Name | serviceName}}(Get{{.Name | serviceName}}Request) returns (Get{{.Name | serviceName}}Response);
 }
 
-message Get{{.Name | pascal}}Request {
+message Get{{.Name | serviceName}}Request {
   string id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
-message Get{{.Name | pascal}}Response {
+message Get{{.Name | serviceName}}Response {
   string id = 1;
   string name = 2;
 }
