@@ -1,0 +1,48 @@
+package itemhandler
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"{{.Module}}/internal/app"
+)
+
+// Handler is a primary adapter for Item resources.
+// Each handler package owns one domain resource and exposes Routes().
+type Handler struct {
+	svc *app.Service
+}
+
+// New creates a new Item Handler.
+func New(svc *app.Service) *Handler {
+	return &Handler{svc: svc}
+}
+
+// Routes returns a chi.Router with item routes.
+// The caller (main.go) decides the mount path.
+func (h *Handler) Routes() chi.Router {
+	r := chi.NewRouter()
+	r.Get("/", h.list)
+	r.Post("/", h.create)
+	r.Get("/{id}", h.get)
+	return r
+}
+
+func (h *Handler) list(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
+}
+
+func (h *Handler) create(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+}
+
+func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
+}

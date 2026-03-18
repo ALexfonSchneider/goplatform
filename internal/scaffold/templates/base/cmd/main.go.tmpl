@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"{{.Module}}/internal/adapters/handler"
+	"{{.Module}}/internal/adapters/handlers/itemhandler"
 	"{{.Module}}/internal/app"
 
 	"github.com/ALexfonSchneider/goplatform/pkg/platform"
@@ -233,9 +233,9 @@ func main() {
 	// OTel middleware: traces + metrics for every HTTP request.
 	srv.Use(observe.HTTPMiddleware(obs.TracerProvider(), obs.MeterProvider()))
 
-	// Primary adapter: HTTP handler. Routes mounted at composition root.
-	h := handler.New(svc)
-	srv.Mount("/api/v1", h.Routes())
+	// Primary adapters: HTTP handlers mounted at composition root.
+	items := itemhandler.New(svc)
+	srv.Mount("/api/v1/items", items.Routes())
 
 	_ = application.Register("server", srv)
 

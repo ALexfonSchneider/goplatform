@@ -25,7 +25,7 @@ func TestGenerator_BaseOnly(t *testing.T) {
 		"internal/domain/model.go",
 		"internal/domain/repository.go",
 		"internal/app/service.go",
-		"internal/adapters/handler/handler.go",
+		"internal/adapters/handlers/itemhandler/handler.go",
 		"config/config.yaml",
 		"Makefile",
 		"Dockerfile",
@@ -129,7 +129,7 @@ func TestGenerator_FullStack(t *testing.T) {
 		"internal/domain/model.go",
 		"internal/domain/repository.go",
 		"internal/app/service.go",
-		"internal/adapters/handler/handler.go",
+		"internal/adapters/handlers/itemhandler/handler.go",
 		"config/config.yaml",
 		"Makefile",
 		"Dockerfile",
@@ -204,7 +204,7 @@ func TestGenerator_MainCompiles(t *testing.T) {
 	mainStr := string(mainContent)
 
 	// Verify clean architecture imports.
-	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/adapters/handler")
+	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/adapters/handlers/itemhandler")
 	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/app")
 	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/adapters/postgresrepo")
 
