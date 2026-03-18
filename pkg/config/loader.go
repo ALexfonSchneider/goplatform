@@ -95,10 +95,15 @@ func (l *Loader) loadSources() error {
 	}
 
 	if l.envPrefix != "" {
-		prefix := l.envPrefix + "_"
+		// Use __ (double underscore) as level separator in env vars.
+		// Single _ stays as part of the key name.
+		// Example: MYAPP__OBSERVE__SERVICE_NAME → observe.service_name
+		prefix := l.envPrefix + "__"
 		if err := l.k.Load(env.Provider(prefix, ".", func(s string) string {
-			return strings.ToLower(strings.ReplaceAll(
-				strings.TrimPrefix(s, prefix), "_", "."))
+			key := strings.TrimPrefix(s, prefix)
+			key = strings.ToLower(key)
+			key = strings.ReplaceAll(key, "__", ".")
+			return key
 		}), nil); err != nil {
 			return fmt.Errorf("config: load env: %w", err)
 		}

@@ -80,8 +80,8 @@ postgres:
 `
 	require.NoError(t, os.WriteFile(cfgFile, []byte(yamlContent), 0o644))
 
-	t.Setenv("MYAPP_SERVER_ADDR", ":7070")
-	t.Setenv("MYAPP_POSTGRES_DSN", "postgres://override:5432/test")
+	t.Setenv("MYAPP__SERVER__ADDR", ":7070")
+	t.Setenv("MYAPP__POSTGRES__DSN", "postgres://override:5432/test")
 
 	loader, err := NewLoader(
 		WithDefaults(map[string]any{
@@ -98,6 +98,32 @@ postgres:
 	assert.Equal(t, ":7070", cfg.Server.Addr)
 	assert.Equal(t, "postgres://override:5432/test", cfg.Postgres.DSN)
 	assert.Equal(t, 25, cfg.Postgres.MaxConns)
+}
+
+func TestLoader_EnvOverride_UnderscoreKeys(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "config.yaml")
+
+	yamlContent := `
+postgres:
+  max_conns: 10
+`
+	require.NoError(t, os.WriteFile(cfgFile, []byte(yamlContent), 0o644))
+
+	// Double underscore separates levels, single underscore is part of key name.
+	// MYAPP__POSTGRES__MAX_CONNS → postgres.max_conns
+	t.Setenv("MYAPP__POSTGRES__MAX_CONNS", "50")
+
+	loader, err := NewLoader(
+		WithFile(cfgFile),
+		WithEnvPrefix("MYAPP"),
+	)
+	require.NoError(t, err)
+
+	var cfg testConfig
+	require.NoError(t, loader.Load(&cfg))
+
+	assert.Equal(t, 50, cfg.Postgres.MaxConns)
 }
 
 func TestLoader_InvalidYAML(t *testing.T) {
