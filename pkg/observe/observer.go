@@ -238,12 +238,19 @@ func (o *Observer) Start(_ context.Context) error {
 		return fmt.Errorf("observe: already started")
 	}
 
-	// Upgrade swap handler: stdout + OTel.
-	if o.swap != nil && o.lp != nil {
-		otelHandler := otelslog.NewHandler(o.serviceName,
-			otelslog.WithLoggerProvider(o.lp),
-		)
-		o.swap.swap(newMultiHandler(o.baseHandler, otelHandler))
+	// Upgrade swap handler: stdout (with trace_id) + OTel.
+	if o.swap != nil {
+		// Wrap base handler with traceHandler so stdout logs contain trace_id/span_id.
+		tracedBase := newTraceHandler(o.baseHandler)
+
+		if o.lp != nil {
+			otelHandler := otelslog.NewHandler(o.serviceName,
+				otelslog.WithLoggerProvider(o.lp),
+			)
+			o.swap.swap(newMultiHandler(tracedBase, otelHandler))
+		} else {
+			o.swap.swap(tracedBase)
+		}
 	}
 
 	o.started = true
