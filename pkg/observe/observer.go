@@ -167,17 +167,55 @@ func New(opts ...Option) (*Observer, error) {
 		}
 	}
 
-	// Create SDK providers eagerly (no exporters yet).
+	// Create SDK providers eagerly WITH exporters.
+	// OTel gRPC exporters use lazy connections — safe to create in New().
+	bgCtx := context.Background()
+
 	if !o.customTP {
-		o.ownedTP = sdktrace.NewTracerProvider(sdktrace.WithResource(res))
+		tpOpts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
+		if o.otlpEndpoint != "" {
+			traceExp, err := otlptracegrpc.New(bgCtx,
+				otlptracegrpc.WithEndpoint(o.otlpEndpoint),
+				otlptracegrpc.WithInsecure(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("observe: create OTLP trace exporter: %w", err)
+			}
+			tpOpts = append(tpOpts, sdktrace.WithBatcher(traceExp))
+		}
+		o.ownedTP = sdktrace.NewTracerProvider(tpOpts...)
 		o.tp = o.ownedTP
 	}
+
 	if !o.customMP {
-		o.ownedMP = sdkmetric.NewMeterProvider(sdkmetric.WithResource(res))
+		mpOpts := []sdkmetric.Option{sdkmetric.WithResource(res)}
+		if o.otlpEndpoint != "" {
+			metricExp, err := otlpmetricgrpc.New(bgCtx,
+				otlpmetricgrpc.WithEndpoint(o.otlpEndpoint),
+				otlpmetricgrpc.WithInsecure(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("observe: create OTLP metric exporter: %w", err)
+			}
+			mpOpts = append(mpOpts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp)))
+		}
+		o.ownedMP = sdkmetric.NewMeterProvider(mpOpts...)
 		o.mp = o.ownedMP
 	}
+
 	if !o.customLP {
-		o.ownedLP = log.NewLoggerProvider(log.WithResource(res))
+		lpOpts := []log.LoggerProviderOption{log.WithResource(res)}
+		if o.otlpEndpoint != "" {
+			logExp, err := otlploggrpc.New(bgCtx,
+				otlploggrpc.WithEndpoint(o.otlpEndpoint),
+				otlploggrpc.WithInsecure(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("observe: create OTLP log exporter: %w", err)
+			}
+			lpOpts = append(lpOpts, log.WithProcessor(log.NewBatchProcessor(logExp)))
+		}
+		o.ownedLP = log.NewLoggerProvider(lpOpts...)
 		o.lp = o.ownedLP
 	}
 
@@ -190,60 +228,14 @@ func New(opts ...Option) (*Observer, error) {
 	return o, nil
 }
 
-// Start connects OTLP exporters to the providers. Spans/metrics created
-// before Start() are recorded by the SDK but only exported after this call.
-func (o *Observer) Start(ctx context.Context) error {
+// Start activates the OTel log bridge (swap handler) and marks the observer
+// as started. Providers and exporters are already created in New().
+func (o *Observer) Start(_ context.Context) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
 	if o.started {
 		return fmt.Errorf("observe: already started")
-	}
-
-	// Add OTLP exporters if endpoint is configured.
-	if o.otlpEndpoint != "" {
-		if o.ownedTP != nil {
-			traceExp, err := otlptracegrpc.New(ctx,
-				otlptracegrpc.WithEndpoint(o.otlpEndpoint),
-				otlptracegrpc.WithInsecure(),
-			)
-			if err != nil {
-				return fmt.Errorf("observe: create OTLP trace exporter: %w", err)
-			}
-			o.ownedTP.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(traceExp))
-		}
-
-		if o.ownedMP != nil {
-			metricExp, err := otlpmetricgrpc.New(ctx,
-				otlpmetricgrpc.WithEndpoint(o.otlpEndpoint),
-				otlpmetricgrpc.WithInsecure(),
-			)
-			if err != nil {
-				return fmt.Errorf("observe: create OTLP metric exporter: %w", err)
-			}
-			// Note: MeterProvider doesn't support AddReader after creation.
-			// Recreate with the reader.
-			o.ownedMP = sdkmetric.NewMeterProvider(
-				sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp)),
-			)
-			o.mp = o.ownedMP
-		}
-
-		if o.ownedLP != nil {
-			logExp, err := otlploggrpc.New(ctx,
-				otlploggrpc.WithEndpoint(o.otlpEndpoint),
-				otlploggrpc.WithInsecure(),
-			)
-			if err != nil {
-				return fmt.Errorf("observe: create OTLP log exporter: %w", err)
-			}
-			// LoggerProvider doesn't support adding processors after creation.
-			// Recreate with processor.
-			o.ownedLP = log.NewLoggerProvider(
-				log.WithProcessor(log.NewBatchProcessor(logExp)),
-			)
-			o.lp = o.ownedLP
-		}
 	}
 
 	// Upgrade swap handler: stdout + OTel.
