@@ -34,11 +34,7 @@ import (
 )
 
 func main() {
-	logger := platform.NewSlogLogger(slog.NewJSONHandler(os.Stdout, nil))
-
-	application := platform.New(
-		platform.WithLogger(logger),
-	)
+	baseHandler := slog.NewJSONHandler(os.Stdout, nil)
 
 	// Load config from per-component YAML files.
 	loader, err := config.NewLoader(
@@ -76,16 +72,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Observability: traces + metrics.
+	// Observability: traces + metrics + log export.
 	obs, err := observe.New(
 		observe.WithServiceName(cfg.Observe.ServiceName),
 		observe.WithOTLPEndpoint(cfg.Observe.OTLPEndpoint),
-		observe.WithLogger(logger),
+		observe.WithBaseHandler(baseHandler),
 	)
 	if err != nil {
-		logger.Error("failed to create observer", "error", err)
+		slog.Error("failed to create observer", "error", err)
 		os.Exit(1)
 	}
+
+	// Logger: stdout before Start(), stdout + OTel after Start().
+	logger := obs.Logger()
+
+	application := platform.New(
+		platform.WithLogger(logger),
+	)
 	_ = application.Register("observe", obs)
 
 	{{- if .Postgres}}
