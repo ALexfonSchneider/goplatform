@@ -44,7 +44,8 @@ func TestGenerator_BaseOnly(t *testing.T) {
 		"migrations/000001_init.up.sql",
 		"internal/adapters/kafkaconsumer/consumer.go",
 		"internal/adapters/natsconsumer/consumer.go",
-		"proto/service.proto",
+		"internal/adapters/temporalworker/worker.go",
+		"proto/testapp/v1/service.proto",
 	}
 
 	for _, f := range notExpected {
@@ -117,6 +118,7 @@ func TestGenerator_FullStack(t *testing.T) {
 		Kafka:    true,
 		NATS:     true,
 		Redis:    true,
+		Temporal: true,
 		Connect:  true,
 	})
 	require.NoError(t, err)
@@ -137,6 +139,8 @@ func TestGenerator_FullStack(t *testing.T) {
 		"config/config.kafka.yaml",
 		"config/config.nats.yaml",
 		"config/config.redis.yaml",
+		"config/config.temporal.yaml",
+		"config/config.connect.yaml",
 		// postgres adapter
 		"internal/adapters/postgresrepo/postgres.go",
 		"migrations/000001_init.up.sql",
@@ -144,8 +148,14 @@ func TestGenerator_FullStack(t *testing.T) {
 		"internal/adapters/kafkaconsumer/consumer.go",
 		// nats adapter
 		"internal/adapters/natsconsumer/consumer.go",
+		// temporal adapter
+		"internal/domain/workflow.go",
+		"internal/adapters/temporalworker/worker.go",
 		// connect
-		"proto/service.proto",
+		"buf.yaml",
+		"buf.gen.yaml",
+		"proto/fullapp/v1/service.proto",
+		"proto/buf/validate/validate.proto",
 	}
 
 	for _, f := range allFiles {
@@ -172,7 +182,7 @@ func TestGenerator_FullStack(t *testing.T) {
 	assert.Contains(t, string(natsCfg), "nats:")
 
 	// Verify proto file uses title case.
-	proto, err := os.ReadFile(filepath.Join(tmp, "proto/service.proto"))
+	proto, err := os.ReadFile(filepath.Join(tmp, "proto/fullapp/v1/service.proto"))
 	require.NoError(t, err)
 	assert.Contains(t, string(proto), "FullappService")
 }

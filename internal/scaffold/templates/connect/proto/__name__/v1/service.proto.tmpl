@@ -2,12 +2,14 @@ syntax = "proto3";
 
 package {{.Name}}.v1;
 
+import "buf/validate/validate.proto";
+
 service {{.Name | title}}Service {
   rpc Get{{.Name | title}}(Get{{.Name | title}}Request) returns (Get{{.Name | title}}Response);
 }
 
 message Get{{.Name | title}}Request {
-  string id = 1;
+  string id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
 message Get{{.Name | title}}Response {

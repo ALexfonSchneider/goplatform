@@ -14,6 +14,9 @@ import (
 //go:embed all:templates
 var templateFS embed.FS
 
+//go:embed validate.proto
+var validateProto []byte
+
 // Data holds the template variables for project generation.
 type Data struct {
 	Name     string // project name (e.g. "orderservice")
@@ -22,6 +25,7 @@ type Data struct {
 	Kafka    bool
 	NATS     bool
 	Redis    bool
+	Temporal bool
 	Connect  bool
 }
 
@@ -60,6 +64,8 @@ func componentEnabled(component string, data Data) bool {
 		return data.NATS
 	case "redis":
 		return data.Redis
+	case "temporal":
+		return data.Temporal
 	case "connect":
 		return data.Connect
 	default:
@@ -69,6 +75,17 @@ func componentEnabled(component string, data Data) bool {
 
 // Render generates the project files in the given output directory.
 func (g *Generator) Render(outputDir string, data Data) error {
+	// Copy validate.proto for ConnectRPC projects.
+	if data.Connect {
+		validateDir := filepath.Join(outputDir, "proto", "buf", "validate")
+		if err := os.MkdirAll(validateDir, 0o755); err != nil {
+			return fmt.Errorf("creating validate proto directory: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(validateDir, "validate.proto"), validateProto, 0o644); err != nil {
+			return fmt.Errorf("writing validate.proto: %w", err)
+		}
+	}
+
 	return fs.WalkDir(templateFS, "templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -108,8 +125,9 @@ func (g *Generator) Render(outputDir string, data Data) error {
 			relPath = rel
 		}
 
-		// Remove the .tmpl suffix for the output file.
+		// Remove the .tmpl suffix and substitute __name__ placeholder in paths.
 		outRel := strings.TrimSuffix(relPath, ".tmpl")
+		outRel = strings.ReplaceAll(outRel, "__name__", data.Name)
 		outPath := filepath.Join(outputDir, outRel)
 
 		// Create parent directories.

@@ -24,6 +24,10 @@ import (
 	{{- if .Redis}}
 	"github.com/ALexfonSchneider/goplatform/pkg/redis"
 	{{- end}}
+	{{- if .Temporal}}
+	"{{.Module}}/internal/adapters/temporalworker"
+	"github.com/ALexfonSchneider/goplatform/pkg/workflow"
+	{{- end}}
 )
 
 func main() {
@@ -48,6 +52,12 @@ func main() {
 			{{- end}}
 			{{- if .Redis}}
 			"config/config.redis.yaml",
+			{{- end}}
+			{{- if .Temporal}}
+			"config/config.temporal.yaml",
+			{{- end}}
+			{{- if .Connect}}
+			"config/config.connect.yaml",
 			{{- end}}
 		),
 		config.WithEnvPrefix("{{.Name | upper}}"),
@@ -96,6 +106,29 @@ func main() {
 	// Application layer.
 	svc := app.NewService(logger)
 
+	{{- if .Temporal}}
+
+	// Temporal workflow client.
+	wfClient, err := workflow.NewClient(
+		workflow.WithHostPort(cfg.Temporal.HostPort),
+		workflow.WithNamespace(cfg.Temporal.Namespace),
+		workflow.WithClientLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create temporal client", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("temporal-client", wfClient)
+
+	// Temporal worker adapter.
+	wfWorker, err := temporalworker.Setup(wfClient, svc, cfg.Temporal.TaskQueue, logger)
+	if err != nil {
+		logger.Error("failed to create temporal worker", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("temporal-worker", wfWorker)
+	{{- end}}
+
 	// HTTP server.
 	srv, err := server.New(
 		server.WithAddr(cfg.Server.Addr),
@@ -143,5 +176,17 @@ type Config struct {
 	Redis struct {
 		Addr string `koanf:"addr"`
 	} `koanf:"redis"`
+	{{- end}}
+	{{- if .Temporal}}
+	Temporal struct {
+		HostPort  string `koanf:"host_port"`
+		Namespace string `koanf:"namespace"`
+		TaskQueue string `koanf:"task_queue"`
+	} `koanf:"temporal"`
+	{{- end}}
+	{{- if .Connect}}
+	Connect struct {
+		Reflection bool `koanf:"reflection"`
+	} `koanf:"connect"`
 	{{- end}}
 }

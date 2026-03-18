@@ -17,6 +17,7 @@ func initCmd() *cobra.Command {
 		kafka    bool
 		nats     bool
 		redis    bool
+		temporal bool
 		connect  bool
 		module   string
 	)
@@ -28,7 +29,7 @@ func initCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			return runInit(cmd, name, module, postgres, kafka, nats, redis, connect)
+			return runInit(cmd, name, module, postgres, kafka, nats, redis, temporal, connect)
 		},
 	}
 
@@ -36,6 +37,7 @@ func initCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&kafka, "kafka", false, "include Kafka broker")
 	cmd.Flags().BoolVar(&nats, "nats", false, "include NATS broker")
 	cmd.Flags().BoolVar(&redis, "redis", false, "include Redis")
+	cmd.Flags().BoolVar(&temporal, "temporal", false, "include Temporal workflows")
 	cmd.Flags().BoolVar(&connect, "connect", false, "include ConnectRPC")
 	cmd.Flags().StringVarP(&module, "module", "m", "", "Go module path (default: github.com/<user>/<name>)")
 
@@ -43,16 +45,17 @@ func initCmd() *cobra.Command {
 }
 
 // runInit performs the project scaffolding for the init command.
-func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, redis, connect bool) error {
+func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, redis, temporal, connect bool) error {
+	outputDir := name
+	baseName := filepath.Base(name)
+
 	if module == "" {
 		user := os.Getenv("USER")
 		if user == "" {
 			user = "user"
 		}
-		module = fmt.Sprintf("github.com/%s/%s", user, name)
+		module = fmt.Sprintf("github.com/%s/%s", user, baseName)
 	}
-
-	outputDir := name
 
 	// Create the project directory.
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
@@ -69,12 +72,13 @@ func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, red
 	// Render scaffold templates.
 	gen := scaffold.New()
 	data := scaffold.Data{
-		Name:     name,
+		Name:     baseName,
 		Module:   module,
 		Postgres: postgres,
 		Kafka:    kafka,
 		NATS:     nats,
 		Redis:    redis,
+		Temporal: temporal,
 		Connect:  connect,
 	}
 
@@ -95,6 +99,9 @@ func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, red
 	}
 	if redis {
 		components = append(components, "redis")
+	}
+	if temporal {
+		components = append(components, "temporal")
 	}
 	if connect {
 		components = append(components, "connect")

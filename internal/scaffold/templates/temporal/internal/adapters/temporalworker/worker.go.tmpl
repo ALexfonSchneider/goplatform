@@ -1,0 +1,30 @@
+package temporalworker
+
+import (
+	"{{.Module}}/internal/app"
+	"github.com/ALexfonSchneider/goplatform/pkg/platform"
+	"github.com/ALexfonSchneider/goplatform/pkg/workflow"
+)
+
+// Setup creates and configures a Temporal Worker with registered
+// workflows and activities. The caller (main.go) registers the
+// returned Worker as a platform.Component.
+func Setup(client *workflow.Client, svc *app.Service, taskQueue string, logger platform.Logger) (*workflow.Worker, error) {
+	_ = svc    // TODO: use svc to create activity implementations
+	_ = logger // TODO: pass to activities for logging
+
+	w, err := workflow.NewWorker(client, workflow.WorkerConfig{
+		TaskQueue:  taskQueue,
+		Workflows:  []any{
+			// TODO: Register workflow functions here.
+		},
+		Activities: []any{
+			// TODO: Register activity implementations here.
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return w, nil
+}
