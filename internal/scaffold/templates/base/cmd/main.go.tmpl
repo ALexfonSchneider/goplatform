@@ -1,0 +1,139 @@
+package main
+
+import (
+	"context"
+	"log/slog"
+	"os"
+
+	"{{.Module}}/internal/handler"
+	"{{.Module}}/internal/service"
+
+	"github.com/ALexfonSchneider/goplatform/pkg/platform"
+	"github.com/ALexfonSchneider/goplatform/pkg/server"
+	"github.com/ALexfonSchneider/goplatform/pkg/config"
+	{{- if .Postgres}}
+	"github.com/ALexfonSchneider/goplatform/pkg/postgres"
+	{{- end}}
+	{{- if .Kafka}}
+	"github.com/ALexfonSchneider/goplatform/pkg/broker/kafka"
+	{{- end}}
+	{{- if .NATS}}
+	natsbr "github.com/ALexfonSchneider/goplatform/pkg/broker/nats"
+	{{- end}}
+	{{- if .Redis}}
+	"github.com/ALexfonSchneider/goplatform/pkg/redis"
+	{{- end}}
+)
+
+func main() {
+	logger := platform.NewSlogLogger(slog.NewJSONHandler(os.Stdout, nil))
+
+	app := platform.New(
+		platform.WithLogger(logger),
+	)
+
+	// Load config from per-component YAML files.
+	loader, err := config.NewLoader(
+		config.WithFiles(
+			"config/config.yaml",
+			{{- if .Postgres}}
+			"config/config.postgres.yaml",
+			{{- end}}
+			{{- if .Kafka}}
+			"config/config.kafka.yaml",
+			{{- end}}
+			{{- if .NATS}}
+			"config/config.nats.yaml",
+			{{- end}}
+			{{- if .Redis}}
+			"config/config.redis.yaml",
+			{{- end}}
+		),
+		config.WithEnvPrefix("{{.Name | upper}}"),
+	)
+	if err != nil {
+		logger.Error("failed to create config loader", "error", err)
+		os.Exit(1)
+	}
+
+	var cfg Config
+	if err := loader.Load(&cfg); err != nil {
+		logger.Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
+
+	{{- if .Postgres}}
+	// PostgreSQL.
+	db, err := postgres.New(
+		postgres.WithDSN(cfg.Postgres.DSN),
+		postgres.WithLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create postgres", "error", err)
+		os.Exit(1)
+	}
+	_ = app.Register("postgres", db)
+	{{- end}}
+
+	{{- if .Redis}}
+	// Redis.
+	rdb, err := redis.New(
+		redis.WithAddr(cfg.Redis.Addr),
+		redis.WithLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create redis", "error", err)
+		os.Exit(1)
+	}
+	_ = app.Register("redis", rdb)
+	{{- end}}
+
+	// Service and handler.
+	svc := service.New()
+	h := handler.New(svc)
+
+	// HTTP server.
+	srv, err := server.New(
+		server.WithAddr(cfg.Server.Addr),
+		server.WithLogger(logger),
+		server.WithHealthCheckers(app.HealthCheckers()),
+	)
+	if err != nil {
+		logger.Error("failed to create server", "error", err)
+		os.Exit(1)
+	}
+	h.Register(srv)
+	_ = app.Register("server", srv)
+
+	if err := app.Run(context.Background()); err != nil {
+		logger.Error("application error", "error", err)
+		os.Exit(1)
+	}
+}
+
+// Config holds the application configuration.
+type Config struct {
+	Server struct {
+		Addr string `koanf:"addr"`
+	} `koanf:"server"`
+	{{- if .Postgres}}
+	Postgres struct {
+		DSN string `koanf:"dsn"`
+	} `koanf:"postgres"`
+	{{- end}}
+	{{- if .Kafka}}
+	Kafka struct {
+		Brokers []string `koanf:"brokers"`
+	} `koanf:"kafka"`
+	{{- end}}
+	{{- if .NATS}}
+	NATS struct {
+		URL string `koanf:"url"`
+	} `koanf:"nats"`
+	{{- end}}
+	{{- if .Redis}}
+	Redis struct {
+		Addr string `koanf:"addr"`
+	} `koanf:"redis"`
+	{{- end}}
+}

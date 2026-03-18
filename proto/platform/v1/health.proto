@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package platform.v1;
+
+// HealthService provides health check functionality.
+service HealthService {
+  // Check returns the health status of the service.
+  rpc Check(CheckRequest) returns (CheckResponse);
+}
+
+// CheckRequest is the request message for health checks.
+message CheckRequest {}
+
+// CheckResponse is the response message for health checks.
+message CheckResponse {
+  // status indicates the health status (e.g., "SERVING", "NOT_SERVING").
+  string status = 1;
+}

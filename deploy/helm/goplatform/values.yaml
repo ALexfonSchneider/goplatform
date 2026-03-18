@@ -1,0 +1,50 @@
+replicaCount: 1
+
+image:
+  repository: ""
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+config:
+  server:
+    addr: ":8080"
+
+postgres:
+  enabled: false
+  dsn: ""
+
+kafka:
+  enabled: false
+  brokers: []
+
+redis:
+  enabled: false
+  addr: ""
+
+observe:
+  enabled: true
+  otlpEndpoint: ""
+
+livenessProbe:
+  httpGet:
+    path: /healthz/live
+    port: http
+  initialDelaySeconds: 5
+
+readinessProbe:
+  httpGet:
+    path: /healthz/ready
+    port: http
+  initialDelaySeconds: 10

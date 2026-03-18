@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goplatform.fullname" . }}
+  labels:
+    {{- include "goplatform.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "goplatform.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "goplatform.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- if .Values.postgres.enabled }}
+            - name: POSTGRES_DSN
+              value: {{ .Values.postgres.dsn | quote }}
+            {{- end }}
+            {{- if .Values.redis.enabled }}
+            - name: REDIS_ADDR
+              value: {{ .Values.redis.addr | quote }}
+            {{- end }}
+            {{- if .Values.observe.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observe.otlpEndpoint | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/goplatform
+              readOnly: true
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "goplatform.fullname" . }}

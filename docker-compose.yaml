@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: apache/kafka:3.7.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "9092:9092"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  consul:
+    image: hashicorp/consul:1.17
+    ports:
+      - "8500:8500"
+    command: agent -dev -client=0.0.0.0
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otelcol-config.yaml:/etc/otelcol/config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    depends_on:
+      - tempo
+      - prometheus
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./deploy/tempo-config.yaml:/etc/tempo/config.yaml
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4327:4317"   # Tempo OTLP gRPC
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./deploy/prometheus.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+
+  temporal:
+    image: temporalio/auto-setup:1.23
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: platform
+      POSTGRES_PWD: platform
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "8233:8080"
+    depends_on:
+      - temporal
+
+volumes:
+  pgdata:

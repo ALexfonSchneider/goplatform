@@ -1,0 +1,23 @@
+package consumer
+
+import (
+	"context"
+	"github.com/ALexfonSchneider/goplatform/pkg/broker"
+	"github.com/ALexfonSchneider/goplatform/pkg/platform"
+)
+
+// Consumer handles messages from NATS subjects.
+type Consumer struct {
+	logger platform.Logger
+}
+
+// New creates a new Consumer.
+func New(logger platform.Logger) *Consumer {
+	return &Consumer{logger: logger}
+}
+
+// Handle processes a broker message.
+func (c *Consumer) Handle(ctx context.Context, msg broker.Message) error {
+	c.logger.Info("received message", "topic", msg.Topic, "key", string(msg.Key))
+	return nil
+}
