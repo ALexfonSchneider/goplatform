@@ -1,4 +1,4 @@
-.PHONY: build test lint run
+.PHONY: build test lint tidy clean dev run{{if .Postgres}} migrate{{end}}{{if .Connect}} proto{{end}}
 
 build:
 	go build -o bin/{{.Name}} ./cmd/...
@@ -9,5 +9,32 @@ test:
 lint:
 	golangci-lint run ./...
 
+tidy:
+	go mod tidy
+
+clean:
+	go clean -cache -testcache
+	rm -rf bin/
+
+dev:
+	goplatform run
+
 run:
 	go run ./cmd/...
+{{- if .Postgres}}
+
+migrate-up:
+	goplatform migrate up
+
+migrate-down:
+	goplatform migrate down
+
+migrate-create:
+	@test -n "$(NAME)" || (echo "Usage: make migrate-create NAME=add_users" && exit 1)
+	goplatform migrate create $(NAME)
+{{- end}}
+{{- if .Connect}}
+
+proto:
+	buf generate
+{{- end}}
