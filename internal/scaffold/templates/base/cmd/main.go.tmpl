@@ -5,13 +5,14 @@ import (
 	"log/slog"
 	"os"
 
-	"{{.Module}}/internal/handler"
-	"{{.Module}}/internal/service"
+	"{{.Module}}/internal/adapters/handler"
+	"{{.Module}}/internal/app"
 
 	"github.com/ALexfonSchneider/goplatform/pkg/platform"
 	"github.com/ALexfonSchneider/goplatform/pkg/server"
 	"github.com/ALexfonSchneider/goplatform/pkg/config"
 	{{- if .Postgres}}
+	"{{.Module}}/internal/adapters/postgresrepo"
 	"github.com/ALexfonSchneider/goplatform/pkg/postgres"
 	{{- end}}
 	{{- if .Kafka}}
@@ -28,7 +29,7 @@ import (
 func main() {
 	logger := platform.NewSlogLogger(slog.NewJSONHandler(os.Stdout, nil))
 
-	app := platform.New(
+	application := platform.New(
 		platform.WithLogger(logger),
 	)
 
@@ -63,7 +64,8 @@ func main() {
 	}
 
 	{{- if .Postgres}}
-	// PostgreSQL.
+
+	// Secondary adapter: PostgreSQL.
 	db, err := postgres.New(
 		postgres.WithDSN(cfg.Postgres.DSN),
 		postgres.WithLogger(logger),
@@ -72,11 +74,14 @@ func main() {
 		logger.Error("failed to create postgres", "error", err)
 		os.Exit(1)
 	}
-	_ = app.Register("postgres", db)
+	_ = application.Register("postgres", db)
+	repo := postgresrepo.New(db)
+	_ = repo // TODO: pass to app.NewService
 	{{- end}}
 
 	{{- if .Redis}}
-	// Redis.
+
+	// Secondary adapter: Redis.
 	rdb, err := redis.New(
 		redis.WithAddr(cfg.Redis.Addr),
 		redis.WithLogger(logger),
@@ -85,27 +90,30 @@ func main() {
 		logger.Error("failed to create redis", "error", err)
 		os.Exit(1)
 	}
-	_ = app.Register("redis", rdb)
+	_ = application.Register("redis", rdb)
 	{{- end}}
 
-	// Service and handler.
-	svc := service.New()
-	h := handler.New(svc)
+	// Application layer.
+	svc := app.NewService(logger)
 
 	// HTTP server.
 	srv, err := server.New(
 		server.WithAddr(cfg.Server.Addr),
 		server.WithLogger(logger),
-		server.WithHealthCheckers(app.HealthCheckers()),
+		server.WithHealthCheckers(application.HealthCheckers()),
 	)
 	if err != nil {
 		logger.Error("failed to create server", "error", err)
 		os.Exit(1)
 	}
-	h.Register(srv)
-	_ = app.Register("server", srv)
 
-	if err := app.Run(context.Background()); err != nil {
+	// Primary adapter: HTTP handler. Routes mounted at composition root.
+	h := handler.New(svc)
+	srv.Mount("/api/v1", h.Routes())
+
+	_ = application.Register("server", srv)
+
+	if err := application.Run(context.Background()); err != nil {
 		logger.Error("application error", "error", err)
 		os.Exit(1)
 	}

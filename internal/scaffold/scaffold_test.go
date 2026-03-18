@@ -22,8 +22,10 @@ func TestGenerator_BaseOnly(t *testing.T) {
 
 	expectedFiles := []string{
 		"cmd/main.go",
-		"internal/handler/handler.go",
-		"internal/service/service.go",
+		"internal/domain/model.go",
+		"internal/domain/repository.go",
+		"internal/app/service.go",
+		"internal/adapters/handler/handler.go",
 		"config/config.yaml",
 		"Makefile",
 		"Dockerfile",
@@ -38,9 +40,10 @@ func TestGenerator_BaseOnly(t *testing.T) {
 
 	// Verify component-specific files are NOT created.
 	notExpected := []string{
-		"internal/repository/repository.go",
+		"internal/adapters/postgresrepo/postgres.go",
 		"migrations/000001_init.up.sql",
-		"internal/consumer/consumer.go",
+		"internal/adapters/kafkaconsumer/consumer.go",
+		"internal/adapters/natsconsumer/consumer.go",
 		"proto/service.proto",
 	}
 
@@ -62,9 +65,8 @@ func TestGenerator_WithPostgres(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Verify postgres-specific files exist.
 	pgFiles := []string{
-		"internal/repository/repository.go",
+		"internal/adapters/postgresrepo/postgres.go",
 		"migrations/000001_init.up.sql",
 	}
 	for _, f := range pgFiles {
@@ -73,12 +75,11 @@ func TestGenerator_WithPostgres(t *testing.T) {
 		assert.NoError(t, err, "expected file %s to exist", f)
 	}
 
-	// Verify repository content references postgres.
-	repo, err := os.ReadFile(filepath.Join(tmp, "internal/repository/repository.go"))
+	repo, err := os.ReadFile(filepath.Join(tmp, "internal/adapters/postgresrepo/postgres.go"))
 	require.NoError(t, err)
 	assert.Contains(t, string(repo), "postgres")
+	assert.Contains(t, string(repo), "secondary adapter")
 
-	// Verify migration references the app name.
 	migration, err := os.ReadFile(filepath.Join(tmp, "migrations/000001_init.up.sql"))
 	require.NoError(t, err)
 	assert.Contains(t, string(migration), "pgapp")
@@ -95,13 +96,14 @@ func TestGenerator_WithKafka(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	consumerPath := filepath.Join(tmp, "internal/consumer/consumer.go")
+	consumerPath := filepath.Join(tmp, "internal/adapters/kafkaconsumer/consumer.go")
 	_, err = os.Stat(consumerPath)
 	assert.NoError(t, err, "expected consumer.go to exist")
 
 	content, err := os.ReadFile(consumerPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "Kafka")
+	assert.Contains(t, string(content), "primary adapter")
 }
 
 func TestGenerator_FullStack(t *testing.T) {
@@ -120,10 +122,12 @@ func TestGenerator_FullStack(t *testing.T) {
 	require.NoError(t, err)
 
 	allFiles := []string{
-		// base
+		// base — clean architecture layers
 		"cmd/main.go",
-		"internal/handler/handler.go",
-		"internal/service/service.go",
+		"internal/domain/model.go",
+		"internal/domain/repository.go",
+		"internal/app/service.go",
+		"internal/adapters/handler/handler.go",
 		"config/config.yaml",
 		"Makefile",
 		"Dockerfile",
@@ -133,9 +137,13 @@ func TestGenerator_FullStack(t *testing.T) {
 		"config/config.kafka.yaml",
 		"config/config.nats.yaml",
 		"config/config.redis.yaml",
-		// postgres
-		"internal/repository/repository.go",
+		// postgres adapter
+		"internal/adapters/postgresrepo/postgres.go",
 		"migrations/000001_init.up.sql",
+		// kafka adapter
+		"internal/adapters/kafkaconsumer/consumer.go",
+		// nats adapter
+		"internal/adapters/natsconsumer/consumer.go",
 		// connect
 		"proto/service.proto",
 	}
@@ -146,7 +154,7 @@ func TestGenerator_FullStack(t *testing.T) {
 		assert.NoError(t, err, "expected file %s to exist", f)
 	}
 
-	// Verify per-component config files contain correct sections.
+	// Verify per-component config files.
 	pgCfg, err := os.ReadFile(filepath.Join(tmp, "config/config.postgres.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(pgCfg), "postgres:")
@@ -185,9 +193,10 @@ func TestGenerator_MainCompiles(t *testing.T) {
 	require.NoError(t, err)
 	mainStr := string(mainContent)
 
-	// Verify module import is present.
-	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/handler")
-	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/service")
+	// Verify clean architecture imports.
+	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/adapters/handler")
+	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/app")
+	assert.Contains(t, mainStr, "github.com/user/compiletest/internal/adapters/postgresrepo")
 
 	// Verify no template syntax remains.
 	assert.False(t, strings.Contains(mainStr, "{{"), "main.go should not contain template syntax")

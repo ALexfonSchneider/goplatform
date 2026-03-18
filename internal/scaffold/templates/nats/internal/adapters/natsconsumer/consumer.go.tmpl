@@ -1,23 +1,28 @@
-package consumer
+package natsconsumer
 
 import (
 	"context"
+
+	"{{.Module}}/internal/app"
 	"github.com/ALexfonSchneider/goplatform/pkg/broker"
 	"github.com/ALexfonSchneider/goplatform/pkg/platform"
 )
 
-// Consumer handles messages from NATS subjects.
+// Consumer is a primary adapter that handles incoming NATS messages
+// and delegates processing to the application Service.
 type Consumer struct {
+	svc    *app.Service
 	logger platform.Logger
 }
 
 // New creates a new Consumer.
-func New(logger platform.Logger) *Consumer {
-	return &Consumer{logger: logger}
+func New(svc *app.Service, logger platform.Logger) *Consumer {
+	return &Consumer{svc: svc, logger: logger}
 }
 
 // Handle processes a broker message.
 func (c *Consumer) Handle(ctx context.Context, msg broker.Message) error {
 	c.logger.Info("received message", "topic", msg.Topic, "key", string(msg.Key))
+	// TODO: Delegate to c.svc for business logic.
 	return nil
 }

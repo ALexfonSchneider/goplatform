@@ -1,0 +1,14 @@
+package app
+
+import "github.com/ALexfonSchneider/goplatform/pkg/platform"
+
+// Service contains the application business logic (use cases).
+// It depends on domain interfaces (ports), not concrete implementations.
+type Service struct {
+	logger platform.Logger
+}
+
+// NewService creates a new Service.
+func NewService(logger platform.Logger) *Service {
+	return &Service{logger: logger}
+}

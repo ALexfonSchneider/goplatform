@@ -1,13 +1,14 @@
-package repository
+package postgresrepo
 
 import "github.com/ALexfonSchneider/goplatform/pkg/postgres"
 
-// Repository provides data access methods.
+// Repository is a secondary adapter that implements domain repository
+// interfaces using PostgreSQL.
 type Repository struct {
 	db *postgres.DB
 }
 
-// New creates a new Repository.
+// New creates a new PostgreSQL Repository.
 func New(db *postgres.DB) *Repository {
 	return &Repository{db: db}
 }
