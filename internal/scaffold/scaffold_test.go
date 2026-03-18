@@ -184,7 +184,7 @@ func TestGenerator_FullStack(t *testing.T) {
 	// Verify proto file uses title case.
 	proto, err := os.ReadFile(filepath.Join(tmp, "proto/fullapp/v1/service.proto"))
 	require.NoError(t, err)
-	assert.Contains(t, string(proto), "FullappService")
+	assert.Contains(t, string(proto), "FullappService") // pascalCase: "fullapp" → "Fullapp"
 }
 
 func TestGenerator_MainCompiles(t *testing.T) {

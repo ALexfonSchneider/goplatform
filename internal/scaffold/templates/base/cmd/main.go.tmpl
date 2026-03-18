@@ -16,9 +16,11 @@ import (
 	"github.com/ALexfonSchneider/goplatform/pkg/postgres"
 	{{- end}}
 	{{- if .Kafka}}
+	"{{.Module}}/internal/adapters/kafkaconsumer"
 	"github.com/ALexfonSchneider/goplatform/pkg/broker/kafka"
 	{{- end}}
 	{{- if .NATS}}
+	"{{.Module}}/internal/adapters/natsconsumer"
 	natsbr "github.com/ALexfonSchneider/goplatform/pkg/broker/nats"
 	{{- end}}
 	{{- if .Redis}}
@@ -105,6 +107,72 @@ func main() {
 
 	// Application layer.
 	svc := app.NewService(logger)
+
+	{{- if .Kafka}}
+
+	// Kafka producer.
+	kafkaProducer, err := kafka.NewProducer(
+		kafka.WithBrokers(cfg.Kafka.Brokers...),
+		kafka.WithProducerLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create kafka producer", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("kafka-producer", kafkaProducer)
+
+	// Kafka consumer.
+	kafkaConsumer, err := kafka.NewConsumer(
+		kafka.WithConsumerBrokers(cfg.Kafka.Brokers...),
+		kafka.WithGroupID("{{.Name}}"),
+		kafka.WithConsumerLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create kafka consumer", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("kafka-consumer", kafkaConsumer)
+
+	// Register Kafka message handler.
+	kc := kafkaconsumer.New(svc, logger)
+	if err := kafkaConsumer.Subscribe(context.Background(), "{{.Name}}.events", kc.Handle); err != nil {
+		logger.Error("failed to subscribe to kafka topic", "error", err)
+		os.Exit(1)
+	}
+	{{- end}}
+
+	{{- if .NATS}}
+
+	// NATS publisher.
+	natsPublisher, err := natsbr.NewPublisher(
+		natsbr.WithURL(cfg.NATS.URL),
+		natsbr.WithPublisherLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create nats publisher", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("nats-publisher", natsPublisher)
+
+	// NATS subscriber.
+	natsSubscriber, err := natsbr.NewSubscriber(
+		natsbr.WithSubscriberURL(cfg.NATS.URL),
+		natsbr.WithQueueGroup("{{.Name}}"),
+		natsbr.WithSubscriberLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create nats subscriber", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("nats-subscriber", natsSubscriber)
+
+	// Register NATS message handler.
+	nc := natsconsumer.New(svc, logger)
+	if err := natsSubscriber.Subscribe(context.Background(), "{{.Name}}.events", nc.Handle); err != nil {
+		logger.Error("failed to subscribe to nats subject", "error", err)
+		os.Exit(1)
+	}
+	{{- end}}
 
 	{{- if .Temporal}}
 

@@ -4,15 +4,15 @@ package {{.Name}}.v1;
 
 import "buf/validate/validate.proto";
 
-service {{.Name | title}}Service {
-  rpc Get{{.Name | title}}(Get{{.Name | title}}Request) returns (Get{{.Name | title}}Response);
+service {{.Name | pascal}}Service {
+  rpc Get{{.Name | pascal}}(Get{{.Name | pascal}}Request) returns (Get{{.Name | pascal}}Response);
 }
 
-message Get{{.Name | title}}Request {
+message Get{{.Name | pascal}}Request {
   string id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
-message Get{{.Name | title}}Response {
+message Get{{.Name | pascal}}Response {
   string id = 1;
   string name = 2;
 }

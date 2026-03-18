@@ -2,15 +2,11 @@ package domain
 
 import "context"
 
-// TODO: Define repository interfaces (ports) here.
-// Adapters in internal/adapters/repository implement these interfaces.
-//
-// Example:
-//
-//	type OrderRepository interface {
-//	    FindByID(ctx context.Context, id string) (*Order, error)
-//	    Save(ctx context.Context, order *Order) error
-//	}
-
-// Ensure context is used.
-var _ context.Context
+// ItemRepository defines the persistence contract for Item entities.
+// Implementations live in internal/adapters (e.g. postgresrepo).
+type ItemRepository interface {
+	FindByID(ctx context.Context, id string) (*Item, error)
+	FindAll(ctx context.Context) ([]Item, error)
+	Save(ctx context.Context, item *Item) error
+	Delete(ctx context.Context, id string) error
+}

@@ -38,8 +38,9 @@ type Generator struct {
 func New() *Generator {
 	return &Generator{
 		funcs: template.FuncMap{
-			"upper": strings.ToUpper,
-			"title": titleCase,
+			"upper":  strings.ToUpper,
+			"title":  titleCase,
+			"pascal": pascalCase,
 		},
 	}
 }
@@ -50,6 +51,26 @@ func titleCase(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// pascalCase converts a kebab-case or snake_case string to PascalCase.
+// "order-service" → "OrderService", "my_app" → "MyApp", "simple" → "Simple".
+func pascalCase(s string) string {
+	var b strings.Builder
+	upper := true
+	for _, r := range s {
+		if r == '-' || r == '_' {
+			upper = true
+			continue
+		}
+		if upper {
+			b.WriteString(strings.ToUpper(string(r)))
+			upper = false
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // componentEnabled returns true if the given component directory should be
