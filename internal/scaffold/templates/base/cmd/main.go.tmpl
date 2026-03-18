@@ -244,9 +244,11 @@ func main() {
 	{{- if .Connect}}
 
 	// ConnectRPC service handler.
-	// TODO: Replace with your service implementation.
+	// Uses Unimplemented stub — replace with your implementation.
+	// Example: create internal/adapters/handlers/rpchandler/ that implements
+	// the generated {{.Name | snake}}v1connect.{{.Name | serviceName}}ServiceHandler interface.
 	path, rpcHandler := {{.Name | snake}}v1connect.New{{.Name | serviceName}}ServiceHandler(
-		svc, // TODO: implement the generated interface on your service
+		{{.Name | snake}}v1connect.Unimplemented{{.Name | serviceName}}ServiceHandler{},
 		connect.WithInterceptors(server.ErrorInterceptor()),
 	)
 	srv.Mount(path, rpcHandler)
