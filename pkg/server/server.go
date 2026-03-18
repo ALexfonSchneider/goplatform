@@ -62,10 +62,27 @@ type Server struct {
 	disableRecovery       bool
 	disableRequestLogging bool
 
+	// Pending middleware/routes added between New() and Start().
+	// Applied in Start() in correct order: default mw → user mw → routes → health.
+	pendingMiddleware []func(http.Handler) http.Handler
+	pendingMounts     []mountEntry
+	pendingRoutes     []routeEntry
+	built             bool // true after Start() has built the router
+
 	// Runtime state.
 	router   chi.Router   // chi router with all routes and middleware
 	httpSrv  *http.Server // created in Start, used for graceful Shutdown
 	listener net.Listener // TCP listener, created in Start
+}
+
+type mountEntry struct {
+	pattern string
+	handler http.Handler
+}
+
+type routeEntry struct {
+	pattern string
+	fn      func(chi.Router)
 }
 
 // Option configures a Server.
@@ -84,16 +101,6 @@ func New(opts ...Option) (*Server, error) {
 	for _, opt := range opts {
 		opt(s)
 	}
-
-	// Apply default middleware unless disabled.
-	if !s.disableRecovery {
-		s.router.Use(Recovery(s.logger))
-	}
-	if !s.disableRequestLogging {
-		s.router.Use(RequestLogging(s.logger, "/healthz/live", "/healthz/ready", "/metrics"))
-	}
-
-	s.mountHealthEndpoints()
 
 	return s, nil
 }
@@ -149,11 +156,33 @@ func WithoutRequestLogging() Option {
 }
 
 // Start begins listening and serving HTTP requests. It implements platform.Component.
-// The server listens on the configured address and serves requests using the
-// chi router. Start returns nil once the server is ready to accept connections.
+//
+// Start builds the router in the correct order to satisfy chi's requirement
+// that all middleware must be defined before routes:
+//  1. Default middleware (Recovery, RequestLogging)
+//  2. User middleware (added via Use())
+//  3. User routes (added via Mount(), Route())
+//  4. Health endpoints (/healthz/live, /healthz/ready, /metrics)
 func (s *Server) Start(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Build router: middleware first, then routes.
+	if !s.disableRecovery {
+		s.router.Use(Recovery(s.logger))
+	}
+	if !s.disableRequestLogging {
+		s.router.Use(RequestLogging(s.logger, "/healthz/live", "/healthz/ready", "/metrics"))
+	}
+	s.router.Use(s.pendingMiddleware...)
+	for _, m := range s.pendingMounts {
+		s.router.Mount(m.pattern, m.handler)
+	}
+	for _, r := range s.pendingRoutes {
+		s.router.Route(r.pattern, r.fn)
+	}
+	s.mountHealthEndpoints()
+	s.built = true
 
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -210,20 +239,37 @@ func (s *Server) Stop(ctx context.Context) error {
 //	path, handler := myv1connect.NewMyServiceHandler(svc, connect.WithInterceptors(...))
 //	srv.Mount(path, handler)
 func (s *Server) Mount(pattern string, handler http.Handler) {
-	s.router.Mount(pattern, handler)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.built {
+		s.router.Mount(pattern, handler)
+	} else {
+		s.pendingMounts = append(s.pendingMounts, mountEntry{pattern, handler})
+	}
 }
 
 // Route adds routes via a chi.Router function.
 func (s *Server) Route(pattern string, fn func(chi.Router)) {
-	s.router.Route(pattern, fn)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.built {
+		s.router.Route(pattern, fn)
+	} else {
+		s.pendingRoutes = append(s.pendingRoutes, routeEntry{pattern, fn})
+	}
 }
 
 // Use adds middleware to the server's middleware stack. These are applied
 // after the default middleware (Recovery, RequestLogging) and affect all routes
-// including health endpoints. For route-specific middleware, use chi's
-// inline middleware via Route().
+// including health endpoints. Must be called before Start().
 func (s *Server) Use(middlewares ...func(http.Handler) http.Handler) {
-	s.router.Use(middlewares...)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.built {
+		s.router.Use(middlewares...)
+	} else {
+		s.pendingMiddleware = append(s.pendingMiddleware, middlewares...)
+	}
 }
 
 // Router returns the underlying chi.Router for direct access.
