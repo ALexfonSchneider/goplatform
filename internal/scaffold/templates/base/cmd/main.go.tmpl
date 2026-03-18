@@ -31,6 +31,10 @@ import (
 	"{{.Module}}/internal/adapters/temporalworker"
 	"github.com/ALexfonSchneider/goplatform/pkg/workflow"
 	{{- end}}
+	{{- if .Connect}}
+	"connectrpc.com/connect"
+	"{{.Module}}/gen/{{.Name | snake}}/v1/{{.Name | snake}}v1connect"
+	{{- end}}
 )
 
 func main() {
@@ -236,6 +240,17 @@ func main() {
 	// Primary adapters: HTTP handlers mounted at composition root.
 	items := itemhandler.New(svc)
 	srv.Mount("/api/v1/items", items.Routes())
+
+	{{- if .Connect}}
+
+	// ConnectRPC service handler.
+	// TODO: Replace with your service implementation.
+	path, rpcHandler := {{.Name | snake}}v1connect.New{{.Name | serviceName}}ServiceHandler(
+		svc, // TODO: implement the generated interface on your service
+		connect.WithInterceptors(server.ErrorInterceptor()),
+	)
+	srv.Mount(path, rpcHandler)
+	{{- end}}
 
 	_ = application.Register("server", srv)
 

@@ -169,8 +169,9 @@ func (g *Generator) Render(outputDir string, data Data) error {
 		}
 
 		// Remove the .tmpl suffix and substitute __name__ placeholder in paths.
+		// Use snakeCase for directory names to ensure valid protobuf package paths.
 		outRel := strings.TrimSuffix(relPath, ".tmpl")
-		outRel = strings.ReplaceAll(outRel, "__name__", data.Name)
+		outRel = strings.ReplaceAll(outRel, "__name__", snakeCase(data.Name))
 		outPath := filepath.Join(outputDir, outRel)
 
 		// Create parent directories.
