@@ -19,7 +19,11 @@ import (
 // not use the connection pool — golang-migrate manages its own connections.
 //
 // If all migrations have already been applied, Migrate returns nil (no error).
-func (db *DB) Migrate(_ context.Context, source fs.ReadDirFS) error {
+func (db *DB) Migrate(ctx context.Context, source fs.ReadDirFS) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("postgres: migrate up: %w", err)
+	}
+
 	m, err := db.newMigrate(source)
 	if err != nil {
 		return err
@@ -41,7 +45,11 @@ func (db *DB) Migrate(_ context.Context, source fs.ReadDirFS) error {
 // It does not use the connection pool — golang-migrate manages its own connections.
 //
 // If no migrations have been applied, MigrateDown returns nil (no error).
-func (db *DB) MigrateDown(_ context.Context, source fs.ReadDirFS) error {
+func (db *DB) MigrateDown(ctx context.Context, source fs.ReadDirFS) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("postgres: migrate down: %w", err)
+	}
+
 	m, err := db.newMigrate(source)
 	if err != nil {
 		return err

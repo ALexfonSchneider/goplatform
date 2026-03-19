@@ -271,11 +271,9 @@ func (a *App) Run(ctx context.Context) error {
 		started = append(started, nc)
 	}
 
-	// 4. Call AfterStartHooks for each started component.
+	// 4. Call AfterStartHooks once (all components are started).
 	for _, h := range afterStart {
-		for _, nc := range started {
-			h(ctx, nc.name)
-		}
+		h(ctx)
 	}
 
 	logger.Info("all components started, waiting for shutdown signal")
@@ -288,11 +286,9 @@ func (a *App) Run(ctx context.Context) error {
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutCancel()
 
-	// 7. Call BeforeStopHooks.
+	// 7. Call BeforeStopHooks once.
 	for _, h := range beforeStop {
-		for _, nc := range components {
-			h(shutCtx, nc.name)
-		}
+		h(shutCtx)
 	}
 
 	// 8. Stop components in REVERSE order, collecting ALL errors.
@@ -306,11 +302,9 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	stopErr := errors.Join(stopErrs...)
 
-	// 9. Call AfterStopHooks.
+	// 9. Call AfterStopHooks once.
 	for _, h := range afterStop {
-		for _, nc := range components {
-			h(shutCtx, nc.name, stopErr)
-		}
+		h(shutCtx, stopErr)
 	}
 
 	// 10. Close plugins in reverse order.

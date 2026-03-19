@@ -129,9 +129,12 @@ func (c *Client) Start(ctx context.Context) error {
 	}
 
 	rdb := goredis.NewClient(&goredis.Options{
-		Addr:     c.addr,
-		Password: c.password,
-		DB:       c.db,
+		Addr:         c.addr,
+		Password:     c.password,
+		DB:           c.db,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
 	})
 
 	if err := rdb.Ping(ctx).Err(); err != nil {

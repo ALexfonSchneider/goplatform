@@ -48,6 +48,7 @@ type Consumer struct {
 	maxWait                time.Duration
 	commitInterval         time.Duration
 	startOffset            int64
+	startOffsetSet         bool
 	heartbeatInterval      time.Duration
 	sessionTimeout         time.Duration
 	rebalanceTimeout       time.Duration
@@ -160,6 +161,7 @@ func WithCommitInterval(d time.Duration) ConsumerOption {
 func WithStartOffset(offset int64) ConsumerOption {
 	return func(c *Consumer) {
 		c.startOffset = offset
+		c.startOffsetSet = true
 	}
 }
 
@@ -285,7 +287,7 @@ func (c *Consumer) Subscribe(ctx context.Context, topic string, handler broker.H
 	if c.commitInterval > 0 {
 		cfg.CommitInterval = c.commitInterval
 	}
-	if c.startOffset != 0 {
+	if c.startOffsetSet {
 		cfg.StartOffset = c.startOffset
 	}
 	if c.heartbeatInterval > 0 {

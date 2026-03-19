@@ -159,7 +159,7 @@ func (db *DB) Start(ctx context.Context) error {
 		cfg.MinConns = db.minConns
 	}
 	if db.connTimeout > 0 {
-		cfg.MaxConnLifetime = db.connTimeout
+		cfg.ConnConfig.ConnectTimeout = db.connTimeout
 	}
 
 	// Attach query tracer if hooks or tracing are configured.

@@ -412,7 +412,7 @@ func TestApp_AfterStopHookReceivesError(t *testing.T) {
 
 	var capturedErr error
 	var mu sync.Mutex
-	app.OnAfterStop(func(ctx context.Context, name string, err error) {
+	app.OnAfterStop(func(ctx context.Context, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		capturedErr = err

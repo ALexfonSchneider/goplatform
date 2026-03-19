@@ -39,10 +39,10 @@ func TestLifecycle_GracefulShutdown(t *testing.T) {
 		beforeStopCalled bool
 		afterStopCalled  bool
 	)
-	app.OnBeforeStop(func(_ context.Context, _ string) {
+	app.OnBeforeStop(func(_ context.Context) {
 		beforeStopCalled = true
 	})
-	app.OnAfterStop(func(_ context.Context, _ string, _ error) {
+	app.OnAfterStop(func(_ context.Context, _ error) {
 		afterStopCalled = true
 	})
 
