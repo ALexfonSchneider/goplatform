@@ -195,14 +195,40 @@ func (p *Producer) Publish(ctx context.Context, msg broker.Message) error {
 	return nil
 }
 
-// PublishBatch sends multiple messages sequentially. Returns on the first
-// error; already-sent messages are not rolled back. PublishBatch implements
-// broker.Publisher.
+// PublishBatch sends multiple messages atomically using kafka-go's
+// WriteMessages. Either all messages are written or none are. Publish hooks
+// and trace context injection are applied to each message before sending.
+// PublishBatch implements broker.Publisher.
 func (p *Producer) PublishBatch(ctx context.Context, msgs []broker.Message) error {
-	for _, msg := range msgs {
-		if err := p.Publish(ctx, msg); err != nil {
-			return err
-		}
+	p.mu.RLock()
+	w := p.writer
+	p.mu.RUnlock()
+
+	if w == nil {
+		return fmt.Errorf("kafka: producer not started")
 	}
+
+	kafkaMsgs := make([]kafkago.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		for _, hook := range p.hooks {
+			if err := hook(ctx, &msg); err != nil {
+				return fmt.Errorf("kafka: publish hook: %w", err)
+			}
+		}
+
+		headers := InjectTraceContext(ctx, nil)
+
+		kafkaMsgs = append(kafkaMsgs, kafkago.Message{
+			Topic:   msg.Topic,
+			Key:     msg.Key,
+			Value:   msg.Value,
+			Headers: headers,
+		})
+	}
+
+	if err := w.WriteMessages(ctx, kafkaMsgs...); err != nil {
+		return fmt.Errorf("kafka: publish batch: %w", err)
+	}
+
 	return nil
 }

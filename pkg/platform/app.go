@@ -232,7 +232,7 @@ func (a *App) Run(ctx context.Context) error {
 	// stopStarted stops all components that have been successfully started,
 	// in reverse order, collecting errors.
 	stopStarted := func(started []namedComponent) error {
-		shutCtx, shutCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		shutCtx, shutCancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 		defer shutCancel()
 
 		var errs []error
@@ -282,8 +282,9 @@ func (a *App) Run(ctx context.Context) error {
 	<-ctx.Done()
 	logger.Info("shutdown signal received")
 
-	// 6. Create shutdown context with timeout.
-	shutCtx, shutCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	// 6. Create shutdown context with timeout, preserving trace values from
+	// the original context (trace_id, span_id, request-scoped values).
+	shutCtx, shutCancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer shutCancel()
 
 	// 7. Call BeforeStopHooks once.

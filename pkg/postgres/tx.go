@@ -7,6 +7,24 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// TxOption configures transaction behavior.
+type TxOption func(*pgx.TxOptions)
+
+// WithIsolation sets the transaction isolation level.
+// Common values: pgx.Serializable, pgx.RepeatableRead, pgx.ReadCommitted.
+func WithIsolation(level pgx.TxIsoLevel) TxOption {
+	return func(o *pgx.TxOptions) {
+		o.IsoLevel = level
+	}
+}
+
+// WithReadOnly marks the transaction as read-only.
+func WithReadOnly() TxOption {
+	return func(o *pgx.TxOptions) {
+		o.AccessMode = pgx.ReadOnly
+	}
+}
+
 // WithTx executes fn within a database transaction. On success (fn returns nil),
 // the transaction is committed. On error or panic, the transaction is rolled back.
 // If fn panics, WithTx re-panics after rolling back.
@@ -17,7 +35,7 @@ import (
 //
 // If the rollback itself fails, the rollback error is joined with the original
 // error using ErrTxRollback.
-func (db *DB) WithTx(ctx context.Context, fn func(pgx.Tx) error) (err error) {
+func (db *DB) WithTx(ctx context.Context, fn func(pgx.Tx) error, opts ...TxOption) (err error) {
 	db.mu.Lock()
 	pool := db.pool
 	db.mu.Unlock()
@@ -26,7 +44,12 @@ func (db *DB) WithTx(ctx context.Context, fn func(pgx.Tx) error) (err error) {
 		return fmt.Errorf("postgres: not connected: %w", ErrConnFailed)
 	}
 
-	tx, err := pool.Begin(ctx)
+	var txOpts pgx.TxOptions
+	for _, o := range opts {
+		o(&txOpts)
+	}
+
+	tx, err := pool.BeginTx(ctx, txOpts)
 	if err != nil {
 		return fmt.Errorf("postgres: begin transaction: %w", err)
 	}
