@@ -194,6 +194,7 @@ func (s *Server) Start(_ context.Context) error {
 		Handler:      s.router,
 		ReadTimeout:  s.readTimeout,
 		WriteTimeout: s.writeTimeout,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	ready := make(chan struct{})

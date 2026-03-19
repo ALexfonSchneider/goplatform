@@ -18,11 +18,12 @@ import (
 // Sources are applied in order: defaults, YAML files, environment variables.
 // Multiple files are loaded in order — later files override earlier ones.
 type Loader struct {
-	mu        sync.RWMutex
-	k         *koanf.Koanf
-	filePaths []string
-	envPrefix string
-	defaults  map[string]any
+	mu            sync.RWMutex
+	k             *koanf.Koanf
+	filePaths     []string
+	envPrefix     string
+	defaults      map[string]any
+	onReloadError func(error)
 }
 
 // Option configures a Loader.
@@ -58,6 +59,15 @@ func WithEnvPrefix(prefix string) Option {
 func WithDefaults(defaults map[string]any) Option {
 	return func(l *Loader) {
 		l.defaults = defaults
+	}
+}
+
+// WithOnReloadError sets a callback invoked when config file reload fails
+// during Watch. Without this, reload errors are silently ignored and the
+// previous configuration remains in effect.
+func WithOnReloadError(fn func(error)) Option {
+	return func(l *Loader) {
+		l.onReloadError = fn
 	}
 }
 
@@ -162,6 +172,9 @@ func (l *Loader) Watch(ctx context.Context, onChange func()) error {
 				l.mu.Unlock()
 
 				if err != nil {
+					if l.onReloadError != nil {
+						l.onReloadError(err)
+					}
 					continue
 				}
 

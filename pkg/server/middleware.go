@@ -53,7 +53,7 @@ func Recovery(log platform.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					buf := make([]byte, 4096)
+					buf := make([]byte, 64<<10)
 					n := runtime.Stack(buf, false)
 					log.Error("server: panic recovered",
 						"panic", fmt.Sprintf("%v", rec),

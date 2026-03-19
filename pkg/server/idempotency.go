@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -105,31 +104,23 @@ func IdempotencyMiddleware(store IdempotencyStore, ttl time.Duration) func(http.
 				return
 			}
 
-			// If the stored value is the string "processing", the original
-			// request has not completed yet.
-			trimmed := bytes.TrimSpace(raw)
-			if len(trimmed) > 0 && trimmed[0] == '"' {
-				var s string
-				if err := json.Unmarshal(raw, &s); err == nil && s == "processing" {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusConflict)
-					_, _ = w.Write([]byte(`{"error":"concurrent request with same idempotency key"}`))
-					return
-				}
-			}
-
-			// The stored value is a completed response — return the cached result.
+			// Try to decode as a completed response first. If it has the
+			// expected structure, return the cached result.
 			var cached cachedResponse
-			if err := json.Unmarshal(raw, &cached); err != nil {
-				http.Error(w, `{"error":"idempotency store error"}`, http.StatusInternalServerError)
+			if err := json.Unmarshal(raw, &cached); err == nil && cached.StatusCode != 0 {
+				for k, v := range cached.Headers {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(cached.StatusCode)
+				_, _ = w.Write(cached.Body)
 				return
 			}
 
-			for k, v := range cached.Headers {
-				w.Header().Set(k, v)
-			}
-			w.WriteHeader(cached.StatusCode)
-			_, _ = w.Write(cached.Body)
+			// Not a completed response — the original request is still
+			// processing.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"concurrent request with same idempotency key"}`))
 		})
 	}
 }

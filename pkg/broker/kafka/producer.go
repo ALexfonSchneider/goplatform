@@ -111,7 +111,7 @@ func (p *Producer) Start(_ context.Context) error {
 	p.writer = &kafkago.Writer{
 		Addr:                   kafkago.TCP(p.brokers...),
 		Balancer:               &kafkago.LeastBytes{},
-		AllowAutoTopicCreation: true,
+		AllowAutoTopicCreation: false,
 	}
 
 	p.logger.Info("kafka producer started", "brokers", p.brokers)

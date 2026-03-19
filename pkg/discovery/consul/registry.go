@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	consulapi "github.com/hashicorp/consul/api"
 
@@ -190,11 +191,17 @@ func (r *Registry) Watch(ctx context.Context, name string) (<-chan []discovery.I
 				if ctx.Err() != nil {
 					return
 				}
-				r.logger.Error("consul: watch error",
+				r.logger.Error("consul: watch error, retrying",
 					"service", name,
 					"error", err,
 				)
-				return
+				// Retry with backoff to avoid tight error loops.
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
+				continue
 			}
 
 			instances := make([]discovery.Instance, 0, len(entries))
