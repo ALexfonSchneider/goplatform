@@ -45,6 +45,7 @@ func TestGenerator_BaseOnly(t *testing.T) {
 		"internal/adapters/kafkaconsumer/consumer.go",
 		"internal/adapters/natsconsumer/consumer.go",
 		"internal/adapters/temporalworker/worker.go",
+		"config/config.s3.yaml",
 		"proto/testapp/v1/service.proto",
 	}
 
@@ -119,6 +120,7 @@ func TestGenerator_FullStack(t *testing.T) {
 		NATS:     true,
 		Redis:    true,
 		Temporal: true,
+		S3:       true,
 		Connect:  true,
 	})
 	require.NoError(t, err)
@@ -140,6 +142,7 @@ func TestGenerator_FullStack(t *testing.T) {
 		"config/config.nats.yaml",
 		"config/config.redis.yaml",
 		"config/config.temporal.yaml",
+		"config/config.s3.yaml",
 		"config/config.connect.yaml",
 		// postgres adapter
 		"internal/adapters/postgresrepo/postgres.go",

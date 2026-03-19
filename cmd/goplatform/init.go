@@ -18,6 +18,7 @@ func initCmd() *cobra.Command {
 		nats     bool
 		redis    bool
 		temporal bool
+		s3       bool
 		connect  bool
 		module   string
 	)
@@ -29,7 +30,7 @@ func initCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			return runInit(cmd, name, module, postgres, kafka, nats, redis, temporal, connect)
+			return runInit(cmd, name, module, postgres, kafka, nats, redis, temporal, s3, connect)
 		},
 	}
 
@@ -38,6 +39,7 @@ func initCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&nats, "nats", false, "include NATS broker")
 	cmd.Flags().BoolVar(&redis, "redis", false, "include Redis")
 	cmd.Flags().BoolVar(&temporal, "temporal", false, "include Temporal workflows")
+	cmd.Flags().BoolVar(&s3, "s3", false, "include S3/MinIO storage")
 	cmd.Flags().BoolVar(&connect, "connect", false, "include ConnectRPC")
 	cmd.Flags().StringVarP(&module, "module", "m", "", "Go module path (default: github.com/<user>/<name>)")
 
@@ -45,7 +47,7 @@ func initCmd() *cobra.Command {
 }
 
 // runInit performs the project scaffolding for the init command.
-func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, redis, temporal, connect bool) error {
+func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, redis, temporal, s3, connect bool) error {
 	outputDir := name
 	baseName := filepath.Base(name)
 
@@ -79,6 +81,7 @@ func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, red
 		NATS:     nats,
 		Redis:    redis,
 		Temporal: temporal,
+		S3:       s3,
 		Connect:  connect,
 	}
 
@@ -102,6 +105,9 @@ func runInit(cmd *cobra.Command, name, module string, postgres, kafka, nats, red
 	}
 	if temporal {
 		components = append(components, "temporal")
+	}
+	if s3 {
+		components = append(components, "s3")
 	}
 	if connect {
 		components = append(components, "connect")

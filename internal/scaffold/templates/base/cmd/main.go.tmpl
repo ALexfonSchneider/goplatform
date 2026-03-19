@@ -31,6 +31,9 @@ import (
 	"{{.Module}}/internal/adapters/temporalworker"
 	"github.com/ALexfonSchneider/goplatform/pkg/workflow"
 	{{- end}}
+	{{- if .S3}}
+	goplatforms3 "github.com/ALexfonSchneider/goplatform/pkg/s3"
+	{{- end}}
 	{{- if .Connect}}
 	"connectrpc.com/connect"
 	"{{.Module}}/gen/{{.Name | snake}}/v1/{{.Name | snake}}v1connect"
@@ -58,6 +61,9 @@ func main() {
 			{{- end}}
 			{{- if .Temporal}}
 			"config/config.temporal.yaml",
+			{{- end}}
+			{{- if .S3}}
+			"config/config.s3.yaml",
 			{{- end}}
 			{{- if .Connect}}
 			"config/config.connect.yaml",
@@ -124,6 +130,24 @@ func main() {
 		os.Exit(1)
 	}
 	_ = application.Register("redis", rdb)
+	{{- end}}
+
+	{{- if .S3}}
+
+	// Secondary adapter: S3/MinIO.
+	s3Client, err := goplatforms3.New(
+		goplatforms3.WithEndpoint(cfg.S3.Endpoint),
+		goplatforms3.WithRegion(cfg.S3.Region),
+		goplatforms3.WithCredentials(cfg.S3.AccessKey, cfg.S3.SecretKey),
+		goplatforms3.WithBucket(cfg.S3.Bucket),
+		goplatforms3.WithUseSSL(cfg.S3.UseSSL),
+		goplatforms3.WithLogger(logger),
+	)
+	if err != nil {
+		logger.Error("failed to create s3 client", "error", err)
+		os.Exit(1)
+	}
+	_ = application.Register("s3", s3Client)
 	{{- end}}
 
 	// Application layer.
@@ -297,6 +321,16 @@ type Config struct {
 		Namespace string `koanf:"namespace"`
 		TaskQueue string `koanf:"task_queue"`
 	} `koanf:"temporal"`
+	{{- end}}
+	{{- if .S3}}
+	S3 struct {
+		Endpoint  string `koanf:"endpoint"`
+		Region    string `koanf:"region"`
+		AccessKey string `koanf:"access_key"`
+		SecretKey string `koanf:"secret_key"`
+		Bucket    string `koanf:"bucket"`
+		UseSSL    bool   `koanf:"use_ssl"`
+	} `koanf:"s3"`
 	{{- end}}
 	{{- if .Connect}}
 	Connect struct {

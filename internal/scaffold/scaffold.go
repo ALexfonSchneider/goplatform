@@ -26,6 +26,7 @@ type Data struct {
 	NATS     bool
 	Redis    bool
 	Temporal bool
+	S3       bool
 	Connect  bool
 }
 
@@ -109,6 +110,8 @@ func componentEnabled(component string, data Data) bool {
 		return data.Redis
 	case "temporal":
 		return data.Temporal
+	case "s3":
+		return data.S3
 	case "connect":
 		return data.Connect
 	default:
