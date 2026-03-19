@@ -1,0 +1,18 @@
+# Normalize line endings to LF on commit, checkout as-is.
+* text=auto eol=lf
+
+# Ensure Go files are always LF.
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.tmpl text eol=lf
+*.proto text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+
+# Binary files.
+*.png binary
+*.jpg binary
+*.gif binary

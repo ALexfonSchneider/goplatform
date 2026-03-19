@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/go-chi/chi/v5"
