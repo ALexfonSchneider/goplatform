@@ -21,6 +21,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -149,7 +150,7 @@ func (db *DB) Start(ctx context.Context) error {
 
 	cfg, err := pgxpool.ParseConfig(db.dsn)
 	if err != nil {
-		return fmt.Errorf("postgres: parse DSN: %w", ErrConnFailed)
+		return fmt.Errorf("postgres: parse DSN: %w", fmt.Errorf("%w: %w", ErrConnFailed, err))
 	}
 
 	if db.maxConns > 0 {
@@ -172,16 +173,16 @@ func (db *DB) Start(ctx context.Context) error {
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("postgres: create pool: %w", ErrConnFailed)
+		return fmt.Errorf("postgres: create pool: %w", fmt.Errorf("%w: %w", ErrConnFailed, err))
 	}
 
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return fmt.Errorf("postgres: ping: %w", ErrConnFailed)
+		return fmt.Errorf("postgres: ping: %w", fmt.Errorf("%w: %w", ErrConnFailed, err))
 	}
 
 	db.pool = pool
-	db.logger.Info("postgres: connected", "dsn", db.dsn)
+	db.logger.Info("postgres: connected", "dsn", maskDSNPassword(db.dsn))
 	return nil
 }
 
@@ -248,6 +249,21 @@ func (db *DB) config() dbConfig {
 		hasTP:       db.tp != nil,
 		hasLogger:   db.logger != nil,
 	}
+}
+
+// maskDSNPassword replaces the password in a PostgreSQL DSN with "****"
+// to prevent credentials from appearing in logs.
+func maskDSNPassword(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "****"
+	}
+	if u.User != nil {
+		if _, hasPass := u.User.Password(); hasPass {
+			u.User = url.UserPassword(u.User.Username(), "****")
+		}
+	}
+	return u.String()
 }
 
 // dbConfig holds a snapshot of DB configuration for test assertions.

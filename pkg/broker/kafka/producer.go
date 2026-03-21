@@ -141,6 +141,20 @@ func (p *Producer) Stop(_ context.Context) error {
 	return nil
 }
 
+// Writer returns the underlying kafka-go Writer for direct access to any
+// operation not covered by the convenience methods (e.g. Stats).
+// Returns nil if the producer has not been started.
+//
+// Usage:
+//
+//	w := producer.Writer()
+//	stats := w.Stats()
+func (p *Producer) Writer() *kafkago.Writer {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.writer
+}
+
 // Publish sends a message to the given topic. Before sending, the message is
 // passed through all registered PublishHooks in order. W3C trace context is
 // injected into the message headers so that consumers can link their spans to
@@ -174,8 +188,12 @@ func (p *Producer) Publish(ctx context.Context, msg broker.Message) error {
 		}
 	}
 
-	// Inject W3C trace context into message headers.
-	headers := InjectTraceContext(ctx, nil)
+	// Convert user-provided headers, then inject W3C trace context on top.
+	var headers []kafkago.Header
+	for k, v := range msg.Headers {
+		headers = append(headers, kafkago.Header{Key: k, Value: []byte(v)})
+	}
+	headers = InjectTraceContext(ctx, headers)
 
 	kafkaMsg := kafkago.Message{
 		Topic:   msg.Topic,
@@ -216,7 +234,12 @@ func (p *Producer) PublishBatch(ctx context.Context, msgs []broker.Message) erro
 			}
 		}
 
-		headers := InjectTraceContext(ctx, nil)
+		// Convert user-provided headers, then inject W3C trace context on top.
+		var headers []kafkago.Header
+		for k, v := range msg.Headers {
+			headers = append(headers, kafkago.Header{Key: k, Value: []byte(v)})
+		}
+		headers = InjectTraceContext(ctx, headers)
 
 		kafkaMsgs = append(kafkaMsgs, kafkago.Message{
 			Topic:   msg.Topic,

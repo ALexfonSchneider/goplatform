@@ -10,22 +10,31 @@ import (
 // underlying handler. This allows the Observer to upgrade from base-only
 // (stdout) to combined (stdout + OTel) after Start() without requiring
 // callers to re-obtain their Logger.
+//
+// WithAttrs and WithGroup return derived handlers that share the same root
+// pointer. When swap() is called on the root, all derived handlers
+// automatically pick up the new underlying handler.
 type swapHandler struct {
-	handler atomic.Pointer[slog.Handler]
+	root   *atomic.Pointer[slog.Handler]
+	builds []func(slog.Handler) slog.Handler
 }
 
 func newSwapHandler(h slog.Handler) *swapHandler {
-	sh := &swapHandler{}
-	sh.handler.Store(&h)
-	return sh
+	root := &atomic.Pointer[slog.Handler]{}
+	root.Store(&h)
+	return &swapHandler{root: root}
 }
 
 func (s *swapHandler) swap(h slog.Handler) {
-	s.handler.Store(&h)
+	s.root.Store(&h)
 }
 
 func (s *swapHandler) current() slog.Handler {
-	return *s.handler.Load()
+	h := *s.root.Load()
+	for _, fn := range s.builds {
+		h = fn(h)
+	}
+	return h
 }
 
 func (s *swapHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -37,9 +46,19 @@ func (s *swapHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (s *swapHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return s.current().WithAttrs(attrs)
+	builds := make([]func(slog.Handler) slog.Handler, len(s.builds), len(s.builds)+1)
+	copy(builds, s.builds)
+	builds = append(builds, func(h slog.Handler) slog.Handler {
+		return h.WithAttrs(attrs)
+	})
+	return &swapHandler{root: s.root, builds: builds}
 }
 
 func (s *swapHandler) WithGroup(name string) slog.Handler {
-	return s.current().WithGroup(name)
+	builds := make([]func(slog.Handler) slog.Handler, len(s.builds), len(s.builds)+1)
+	copy(builds, s.builds)
+	builds = append(builds, func(h slog.Handler) slog.Handler {
+		return h.WithGroup(name)
+	})
+	return &swapHandler{root: s.root, builds: builds}
 }

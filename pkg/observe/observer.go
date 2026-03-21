@@ -29,6 +29,7 @@ import (
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	otellog "go.opentelemetry.io/otel/log"
@@ -149,22 +150,15 @@ func New(opts ...Option) (*Observer, error) {
 	}
 
 	// Build resource for providers.
+	resAttrs := []attribute.KeyValue{semconv.ServiceName(o.serviceName)}
+	if o.serviceVersion != "" {
+		resAttrs = append(resAttrs, semconv.ServiceVersion(o.serviceVersion))
+	}
 	res, err := resource.New(context.Background(),
-		resource.WithAttributes(semconv.ServiceName(o.serviceName)),
+		resource.WithAttributes(resAttrs...),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("observe: build resource: %w", err)
-	}
-	if o.serviceVersion != "" {
-		res, err = resource.New(context.Background(),
-			resource.WithAttributes(
-				semconv.ServiceName(o.serviceName),
-				semconv.ServiceVersion(o.serviceVersion),
-			),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("observe: build resource: %w", err)
-		}
 	}
 
 	// Create SDK providers eagerly WITH exporters.

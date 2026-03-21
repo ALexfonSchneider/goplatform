@@ -165,18 +165,20 @@ func (l *Loader) Watch(ctx context.Context, onChange func()) error {
 			}
 
 			if event.Has(fsnotify.Write) {
-				// Reload all sources so priority order is preserved.
+				// Reload all sources into a new instance so priority order is preserved.
+				// On failure, roll back to the previous working config.
 				l.mu.Lock()
+				oldK := l.k
 				l.k = koanf.New(".")
-				err := l.loadSources()
-				l.mu.Unlock()
-
-				if err != nil {
+				if err := l.loadSources(); err != nil {
+					l.k = oldK
+					l.mu.Unlock()
 					if l.onReloadError != nil {
 						l.onReloadError(err)
 					}
 					continue
 				}
+				l.mu.Unlock()
 
 				onChange()
 			}

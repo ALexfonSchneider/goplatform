@@ -240,6 +240,25 @@ func (s *Subscriber) Stop(_ context.Context) error {
 	return nil
 }
 
+// Conn returns the underlying NATS connection for direct access to any
+// operation not covered by the convenience methods.
+// Returns nil if the subscriber has not been started.
+func (s *Subscriber) Conn() *natsgo.Conn {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.conn
+}
+
+// JetStream returns the underlying JetStream context for direct access to
+// JetStream-specific operations (e.g. stream management, consumer info).
+// Returns nil if JetStream mode is not enabled or the subscriber has not
+// been started.
+func (s *Subscriber) JetStream() natsgo.JetStreamContext {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.js
+}
+
 // Subscribe starts receiving messages on the given topic and calls handler for
 // each message. The handler is wrapped with any registered middleware before
 // invocation. In JetStream mode, a durable consumer is created with explicit
@@ -260,8 +279,16 @@ func (s *Subscriber) Subscribe(_ context.Context, topic string, handler broker.H
 	wrapped := applyMiddleware(handler, s.middlewares)
 
 	// Build the NATS message callback.
+	// wg.Add(1) is guarded by checking conn != nil under the lock to prevent
+	// a race where Stop() calls wg.Wait() before Add(1) executes.
 	msgHandler := func(msg *natsgo.Msg) {
+		s.mu.Lock()
+		if s.conn == nil {
+			s.mu.Unlock()
+			return
+		}
 		s.wg.Add(1)
+		s.mu.Unlock()
 		defer s.wg.Done()
 		s.processMessage(msg, topic, wrapped)
 	}
@@ -356,12 +383,14 @@ func (s *Subscriber) processMessage(natsMsg *natsgo.Msg, topic string, handler b
 		}
 
 		// Wait before retrying, respecting context cancellation.
+		retryTimer := time.NewTimer(s.retryBackoff)
 		select {
 		case <-ctx.Done():
+			retryTimer.Stop()
 			span.RecordError(ctx.Err())
 			span.SetStatus(codes.Error, "context cancelled during retry")
 			return
-		case <-time.After(s.retryBackoff):
+		case <-retryTimer.C:
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,7 +128,7 @@ func replaceDBName(dsn, newDB string) string {
 	// between it and '?' (or end of string).
 
 	// Check if it's a URI-style DSN.
-	if len(dsn) > 11 && (dsn[:11] == "postgres://" || dsn[:14] == "postgresql://") {
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		// Find the authority section (after ://), then find the database name.
 		schemeEnd := 0
 		for i := 0; i < len(dsn); i++ {

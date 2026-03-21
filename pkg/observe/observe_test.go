@@ -85,7 +85,7 @@ func TestHTTPMiddleware(t *testing.T) {
 
 	spans := exp.GetSpans()
 	require.Len(t, spans, 1)
-	assert.Equal(t, "HTTP GET /test-path", spans[0].Name)
+	assert.Equal(t, "GET /test-path", spans[0].Name)
 
 	// Verify span attributes.
 	attrMap := make(map[string]any)

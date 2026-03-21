@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -96,5 +97,5 @@ func createOrder(w http.ResponseWriter, _ *http.Request) {
 func getOrder(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"id":"` + id + `","status":"pending"}`))
+	_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "status": "pending"})
 }

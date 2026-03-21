@@ -1,7 +1,6 @@
 package observe
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -37,7 +36,7 @@ func HTTPMiddleware(tp trace.TracerProvider, mp metric.MeterProvider) func(http.
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			spanName := fmt.Sprintf("HTTP %s %s", r.Method, r.URL.Path)
+			spanName := r.Method + " " + r.URL.Path
 			ctx, span := tracer.Start(r.Context(), spanName,
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(

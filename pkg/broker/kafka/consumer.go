@@ -223,6 +223,20 @@ func NewConsumer(opts ...ConsumerOption) (*Consumer, error) {
 	return c, nil
 }
 
+// Readers returns copies of the underlying kafka-go Readers created by
+// Subscribe calls. Each Reader corresponds to one topic subscription.
+// Returns nil if no subscriptions have been made.
+//
+// This is an escape hatch for cases where direct access to the Reader is
+// needed, e.g. for reading lag stats via Reader.Stats().
+func (c *Consumer) Readers() []*kafkago.Reader {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]*kafkago.Reader, len(c.readers))
+	copy(out, c.readers)
+	return out
+}
+
 // Start is a no-op for Consumer because actual reading begins when Subscribe is
 // called. Start implements platform.Component.
 func (c *Consumer) Start(_ context.Context) error {
@@ -400,12 +414,14 @@ func (c *Consumer) processMessage(
 		}
 
 		// Wait before retrying, respecting context cancellation.
+		retryTimer := time.NewTimer(c.retryBackoff)
 		select {
 		case <-msgCtx.Done():
+			retryTimer.Stop()
 			span.RecordError(msgCtx.Err())
 			span.SetStatus(codes.Error, "context cancelled during retry")
 			return
-		case <-time.After(c.retryBackoff):
+		case <-retryTimer.C:
 		}
 	}
 

@@ -173,6 +173,36 @@ func (p *Publisher) Stop(_ context.Context) error {
 	return nil
 }
 
+// Conn returns the underlying NATS connection for direct access to any
+// operation not covered by the convenience methods (e.g. request-reply,
+// custom subscriptions, connection stats).
+// Returns nil if the publisher has not been started.
+//
+// Usage:
+//
+//	conn := publisher.Conn()
+//	resp, _ := conn.Request("subject", data, timeout)
+func (p *Publisher) Conn() *natsgo.Conn {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.conn
+}
+
+// JetStream returns the underlying JetStream context for direct access to
+// JetStream-specific operations (e.g. stream management, key-value store,
+// object store). Returns nil if JetStream mode is not enabled or the
+// publisher has not been started.
+//
+// Usage:
+//
+//	js := publisher.JetStream()
+//	info, _ := js.StreamInfo("orders")
+func (p *Publisher) JetStream() natsgo.JetStreamContext {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.js
+}
+
 // Publish sends a message to the given topic. Before sending, the message is
 // passed through all registered PublishHooks in order. W3C trace context is
 // injected into the NATS message headers so that subscribers can link their
